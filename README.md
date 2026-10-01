@@ -1,7 +1,7 @@
 # PED
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gabrielegualtieri/ped/main/assets/ped-logo.png" alt="PED — multilingual AI decision model" width="680" />
+  <img src="https://raw.githubusercontent.com/gabrielegualtieri/ped/main/assets/ped-logo-orbitale.png" alt="PED — multilingual AI decision model" width="680" />
 </p>
 
 <p align="center"><strong>Typed decisions. Local inference. Multilingual by design.</strong></p>
@@ -242,6 +242,16 @@ yarn build
 PED_MODEL_DIR=./onnx yarn example
 yarn example:router
 ```
+
+## Brand assets
+
+<p>
+  <img src="https://raw.githubusercontent.com/gabrielegualtieri/ped/main/assets/ped-icon-orbitale.png" alt="PED standalone orbital symbol" width="128" />
+</p>
+
+Download the [PED logo](https://raw.githubusercontent.com/gabrielegualtieri/ped/main/assets/ped-logo-orbitale.png)
+or the [standalone symbol](https://raw.githubusercontent.com/gabrielegualtieri/ped/main/assets/ped-icon-orbitale.png)
+(square PNG).
 
 ## Credits and licenses
 
