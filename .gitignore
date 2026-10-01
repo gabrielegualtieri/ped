@@ -5,3 +5,4 @@ onnx/ped.onnx.data
 export/model/
 export/.venv/
 .DS_Store
+onnx/multilingual/
