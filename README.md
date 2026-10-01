@@ -1,4 +1,4 @@
-# @gabrielegualtieri/ped
+# @heryox/ped
 
 **Ped** runs **[Convai Innovations' decision model](https://huggingface.co/convaiinnovations/laya)** — the open-source, Jev-compatible
 _System 1 decision model_ by Convai Innovations — from Node.js / TypeScript.
@@ -18,7 +18,7 @@ matches the Python implementation to four decimal places.
 ## Install
 
 ```sh
-npm install @gabrielegualtieri/ped
+npm install @heryox/ped
 ```
 
 Node.js 20 or newer. The ONNX weights (about 1.7 GB, fp32) are downloaded from Hugging Face on first
@@ -28,7 +28,7 @@ RAM for the loaded model plus a few hundred MB per batch of questions.
 ## Usage
 
 ```ts
-import { Ped } from "@gabrielegualtieri/ped";
+import { Ped } from "@heryox/ped";
 
 const ped = await Ped.load();
 
@@ -66,7 +66,7 @@ and `result.answers.churn_risk` a `NoulAnswer` without any casting.
 ```ts
 await Ped.load({
   modelDir: "./onnx", // use a local export instead of downloading (see below)
-  repo: "gabrielegualtieri/ped-onnx", // Hugging Face repo that holds the ONNX bundle
+  repo: "heryox/ped-onnx", // Hugging Face repo that holds the ONNX bundle
   subfolder: "multilingual", // a checkpoint variant inside that repo
   revision: "main", // pin a commit hash for reproducible results; "main" follows the repo
   cacheDir: "/var/cache/ped",

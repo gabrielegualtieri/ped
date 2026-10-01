@@ -1,9 +1,9 @@
 {
-  "name": "@gabrielegualtieri/ped",
+  "name": "@heryox/ped",
   "version": "0.1.2",
   "description": "Ped: run the open-source Jev-compatible System-1 decision model (convaiinnovations/laya) from Node.js / TypeScript via ONNX Runtime",
   "license": "MIT",
-  "author": "Gabriele Gualtieri",
+  "author": "heryox",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gabrielegualtieri/ped.git"

@@ -14,7 +14,7 @@ tags:
 # Ped — ONNX export of the decision model
 
 ONNX export of [convaiinnovations/laya](https://huggingface.co/convaiinnovations/laya) (ModernBERT-large
-encoder + decision head) for use with [`@gabrielegualtieri/ped`](https://www.npmjs.com/package/@gabrielegualtieri/ped)
+encoder + decision head) for use with [`@heryox/ped`](https://www.npmjs.com/package/@heryox/ped)
 from Node.js / TypeScript, or with ONNX Runtime directly.
 
 | File | Contents |
@@ -30,7 +30,7 @@ Built with [`export/export_onnx.py`](https://github.com/gabrielegualtieri/ped/bl
 max logit difference vs. the PyTorch reference ≈ 1e-5.
 
 ```ts
-import { Ped } from "@gabrielegualtieri/ped";
+import { Ped } from "@heryox/ped";
 const ped = await Ped.load(); // downloads this bundle on first use
 ```
 
