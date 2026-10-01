@@ -1,6 +1,6 @@
 {
   "name": "@heryox/ped",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Ped: run the open-source Jev-compatible System-1 decision model (convaiinnovations/laya, English and 100+ languages) from Node.js / TypeScript via ONNX Runtime",
   "license": "MIT",
   "author": "heryox",
