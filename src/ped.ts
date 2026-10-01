@@ -12,6 +12,7 @@ import * as ort from "onnxruntime-node";
 import { Tokenizer } from "@huggingface/tokenizers";
 import { buildSequence, confidenceFromProbs, QTYPES, renderOptions, softmax, tempBucket, toInternal, type SpecialIds } from "./sequence.js";
 import { ensureBundle, type DownloadOptions } from "./download.js";
+import { alignWithRustTokenizer, specialIds, type TokenizerConfig, type TokenizerJson } from "./tokenizer.js";
 import type { Answer, PedConfig, Question, SystemOneResult } from "./types.js";
 
 export interface PedOptions extends DownloadOptions {
@@ -24,6 +25,12 @@ export interface PedOptions extends DownloadOptions {
   executionProviders?: ort.InferenceSession.ExecutionProviderConfig[];
   /** extra onnxruntime session options (merged over the defaults) */
   sessionOptions?: ort.InferenceSession.SessionOptions;
+  /**
+   * Tokens of the request sequence (question header + options + state); the state is cut to fit. Default:
+   * the bundle's `max_len` (512 English, 1024 multilingual). The multilingual checkpoint reads up to 8192
+   * for long documents; time grows with the real input length, not with the limit.
+   */
+  maxLen?: number;
 }
 
 const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
@@ -42,13 +49,15 @@ export class Ped {
     const modelDir = opts.modelDir ? path.resolve(opts.modelDir) : await ensureBundle(opts);
     const read = async (f: string): Promise<unknown> => JSON.parse(await readFile(path.join(modelDir, f), "utf8"));
     const config = (await read("ped_config.json")) as PedConfig;
-    const tok = new Tokenizer((await read("tokenizer/tokenizer.json")) as object, (await read("tokenizer/tokenizer_config.json")) as object);
-    const id = (t: string) => {
-      const v = tok.token_to_id(t);
-      if (v === undefined) throw new Error(`special token ${t} missing from tokenizer`);
-      return v;
-    };
-    const ids: SpecialIds = { cls: id("[CLS]"), sep: id("[SEP]"), mask: id("[MASK]"), pad: id("[PAD]"), maskTok: "[MASK]" };
+    if (opts.maxLen !== undefined) {
+      if (!Number.isInteger(opts.maxLen) || opts.maxLen < 1) throw new Error(`maxLen must be a positive integer, got ${opts.maxLen}`);
+      config.max_len = opts.maxLen;
+    }
+    const tokConfig = (await read("tokenizer/tokenizer_config.json")) as TokenizerConfig;
+    const tokJson = (await read("tokenizer/tokenizer.json")) as TokenizerJson;
+    const tok = new Tokenizer(tokJson, tokConfig);
+    alignWithRustTokenizer(tok, tokJson);
+    const ids = specialIds(tok, tokConfig);
     const session = await ort.InferenceSession.create(path.join(modelDir, "ped.onnx"), {
       executionProviders: opts.executionProviders ?? ["cpu"],
       graphOptimizationLevel: "all",
@@ -131,7 +140,7 @@ export class Ped {
           rl_agent: ext,
         };
       } else if (q.t === "score") {
-        const crit = q.crit as string[];
+        const crit = q.crit as readonly string[];
         answers[qid] = {
           type: "score",
           score: round4(p.reduce((s, v, i) => s + i * v, 0)),
