@@ -1,7 +1,7 @@
 {
   "name": "@heryox/ped",
   "version": "0.2.0",
-  "description": "Ped: run the open-source Jev-compatible System-1 decision model (convaiinnovations/laya, English and 100+ languages) from Node.js / TypeScript via ONNX Runtime",
+  "description": "PED by heryox: multilingual AI decisions for Node.js and TypeScript. Typed choices, scores and probabilities in one local ONNX inference pass.",
   "license": "MIT",
   "author": "heryox",
   "repository": {
