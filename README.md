@@ -1,20 +1,50 @@
-# @heryox/ped
+# PED
 
-**Ped** runs **[Laya](https://huggingface.co/convaiinnovations/laya)** — the open-source, Jev-compatible
-_System 1 decision model_ by Convai Innovations — from Node.js / TypeScript, in English and in 100+
-other languages.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gabrielegualtieri/ped/main/assets/ped-logo.png" alt="PED — multilingual AI decision model" width="680" />
+</p>
 
-The model does not generate text. You hand it a state (a ticket, an email, a JSON object) and typed
-questions, and it returns every answer with calibrated probabilities in **one forward pass**:
+<p align="center"><strong>Typed decisions. Local inference. Multilingual by design.</strong></p>
 
-- `choice` — pick one option, with a probability per option
-- `score` — an expected level on an ordered rubric, with the distribution
-- `noul` — a calibrated P(true) for a yes/no statement
+<p align="center">
+  <a href="https://www.npmjs.com/package/@heryox/ped">npm · @heryox/ped</a> ·
+  <a href="https://huggingface.co/heryox/ped-onnx">Hugging Face · model weights</a> ·
+  <a href="https://github.com/gabrielegualtieri/ped">GitHub · source</a>
+</p>
 
-This package runs the model with [ONNX Runtime](https://onnxruntime.ai/); PyTorch and Python are
-not needed at runtime. The request/response shape is the same as the Python reference
-implementation (`RLAgent.system_one`) and as TypeSafe Jev's `system_one` API, and the output
-matches the Python implementation to four decimal places.
+**PED is a multilingual AI decision model and TypeScript toolkit by
+[Gabriele Gualtieri (heryox)](https://github.com/gabrielegualtieri).** It turns text, tickets, emails
+and structured data into decisions your application can use directly: a selected category, an
+ordered score or a probability for a yes/no question.
+
+Define the questions and the available answers. PED evaluates them together in **one ONNX forward
+pass**, returning structured, typed results. The project combines published ONNX checkpoints, a
+Node.js SDK and automatic language routing in one entry point.
+
+## Why PED
+
+- **Application-ready results:** choices, scores and probabilities with types inferred from your questions.
+- **Local inference:** run with [ONNX Runtime](https://onnxruntime.ai/) inside Node.js; once the weights are cached, inference stays on your machine.
+- **English + 100+ languages:** an English checkpoint and a multilingual checkpoint, selected automatically or explicitly.
+- **Multiple questions, one run:** route a ticket, assess its urgency and check a risk signal in the same batch.
+- **A native JavaScript workflow:** Node.js / TypeScript at runtime, with the Jev-compatible `systemOne` API.
+
+Use PED for ticket triage, intent classification, email routing, rubric scoring and decision steps
+in automation or agent workflows. Your questions define the task; the model returns values that
+your code can act on.
+
+## Three decision types
+
+| Type     | What you define                      | What PED returns                                       |
+| -------- | ------------------------------------ | ------------------------------------------------------ |
+| `choice` | Named options and their descriptions | Selected option, probability per option and confidence |
+| `score`  | An ordered rubric                    | Expected level, distribution and confidence            |
+| `noul`   | A yes/no statement                   | P(true)                                                |
+
+The English checkpoint applies fitted temperature calibration. The multilingual checkpoint ships
+with unit temperatures, so its probabilities are uncalibrated. See [Limits](#limits) for details.
+
+## Two checkpoints, one interface
 
 Two checkpoints are available, and the `Router` picks one per request:
 
@@ -73,7 +103,7 @@ await router.systemOne(state, questions, { lang: "it" }); // you know the langua
 router.route(state); // { model, reason, detection } without loading or running anything
 ```
 
-Detection is a TypeScript port of Laya's own router (no dependencies, ~0.1 ms per state):
+Detection uses dependency-free TypeScript heuristics:
 
 - a non-Latin script (Chinese, Japanese, Korean, Arabic, Cyrillic, Devanagari, Greek, Hebrew, Thai, …)
   goes to `multilingual`: the English checkpoint cannot read it and stays confident while wrong;
@@ -86,9 +116,8 @@ Detection is a TypeScript port of Laya's own router (no dependencies, ~0.1 ms pe
   English read by the multilingual checkpoint loses a little accuracy; another language read by the
   English checkpoint gets confidently wrong answers.
 
-On Laya's shared benchmark the English checkpoint is the better one on English (MASSIVE intent 0.783
-vs 0.657) and the multilingual one on everything else (MASSIVE intent on 13 other languages 0.451 vs
-0.306, XNLI on 14 other languages 0.731 vs 0.521; usable in 45 of 51 languages instead of 23).
+The two checkpoints have different language strengths. Pass `lang` or `model` when the language is
+known; automatic routing handles the remaining cases and includes its reason in the result.
 
 ### Router options
 
@@ -161,13 +190,12 @@ await Ped.load({
 });
 ```
 
-Every question of one `systemOne` call is batched into a single run; a call with three questions
-takes about 140 ms on an Apple-silicon CPU once the model is warm. Time follows the real input
-length, not `maxLen`.
+Every question of one `systemOne` call is batched into a single run. Runtime depends on the actual
+input length, number of questions, execution provider and hardware, rather than `maxLen` alone.
 
 ## Exporting the ONNX bundles yourself
 
-`export/export_onnx.py` turns a Hugging Face checkpoint (encoder + Laya's decision head) into one ONNX
+`export/export_onnx.py` turns a Hugging Face checkpoint (encoder + decision head) into one ONNX
 graph and copies the tokenizer and calibration values next to it. You only need this to build a
 bundle from a newer checkpoint or from a variant that is not published:
 
@@ -215,8 +243,17 @@ PED_MODEL_DIR=./onnx yarn example
 yarn example:router
 ```
 
-## License
+## Credits and licenses
 
-MIT. The Laya model weights are published by Convai Innovations under Apache 2.0. The language
-detection and routing decision (`src/lang*.ts`, `src/router.ts`) are ported from Convai Innovations'
-`laya` package and remain under Apache 2.0 (`licenses/laya-LICENSE`).
+PED is developed and maintained by **Gabriele Gualtieri (heryox)**. The PED SDK and export tooling
+are published under [MIT](LICENSE), with the existing upstream notices preserved.
+
+The pretrained encoder and decision-head weights originate from
+[Convai Innovations' Laya](https://huggingface.co/convaiinnovations/laya), including its
+`multilingual/` checkpoint, and remain under **Apache 2.0**. This release packages those checkpoints
+for ONNX and adds the PED TypeScript SDK, batched inference and language routing. The request and
+response format follows the upstream `RLAgent.system_one` reference and TypeSafe Jev's `system_one`
+API.
+
+The language detection and routing decision (`src/lang*.ts`, `src/router.ts`) are ported from the
+upstream `laya` package and remain under Apache 2.0; see [the retained license](licenses/laya-LICENSE).
