@@ -15,10 +15,10 @@ import { pipeline } from "node:stream/promises";
 export const BUNDLE_FILES = ["ped.onnx", "ped.onnx.data", "ped_config.json", "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json"] as const;
 
 /** Where the exported ONNX bundle is published. */
-export const DEFAULT_REPO = "gabrielegualtieri/ped-onnx";
+export const DEFAULT_REPO = "heryox/ped-onnx";
 
 export interface DownloadOptions {
-  /** Hugging Face repo id (default: gabrielegualtieri/ped-onnx) */
+  /** Hugging Face repo id (default: heryox/ped-onnx) */
   repo?: string;
   /** git revision in that repo (default: main) */
   revision?: string;
