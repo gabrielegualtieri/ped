@@ -22,6 +22,7 @@ declare module "@huggingface/tokenizers" {
   export class Tokenizer {
     constructor(tokenizer: object, config: object);
     encode(text: string, options?: EncodeOptions): Encoding;
+    decode(token_ids: number[], options?: { skip_special_tokens?: boolean; clean_up_tokenization_spaces?: boolean | null }): string;
     token_to_id(token: string): number | undefined;
     id_to_token(id: number): string | undefined;
   }

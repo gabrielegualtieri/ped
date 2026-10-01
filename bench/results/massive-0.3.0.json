@@ -1,0 +1,209 @@
+{
+ "version": "0.3.0",
+ "options": {},
+ "bundles": {
+  "english": "onnx",
+  "multilingual": "onnx/multilingual"
+ },
+ "hardware": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "cores": 4,
+  "node": "v22.22.0"
+ },
+ "n_per_language": 100,
+ "languages": [
+  "en",
+  "it",
+  "es",
+  "fr",
+  "de",
+  "pt",
+  "ru",
+  "zh",
+  "ja",
+  "ar",
+  "hi",
+  "ko",
+  "tr",
+  "pl",
+  "th",
+  "sw"
+ ],
+ "pooled": {
+  "scenario_accuracy": 0.561875,
+  "scenario_ece": 0.17663737499999965,
+  "yes_no_accuracy": 0.701875,
+  "yes_no_auroc": 0.799277734375,
+  "p50_ms": 561.8688100000145,
+  "p95_ms": 1193.7530700000061
+ },
+ "per_language": {
+  "en": {
+   "n": 100,
+   "scenario_accuracy": 0.75,
+   "scenario_ece": 0.11751599999999987,
+   "yes_no_accuracy": 0.78,
+   "p50_ms": 1252.013254999998,
+   "routes": {
+    "multilingual": 24,
+    "english": 76
+   }
+  },
+  "it": {
+   "n": 100,
+   "scenario_accuracy": 0.58,
+   "scenario_ece": 0.16058200000000006,
+   "yes_no_accuracy": 0.66,
+   "p50_ms": 550.3991280000046,
+   "routes": {
+    "multilingual": 95,
+    "english": 5
+   }
+  },
+  "es": {
+   "n": 100,
+   "scenario_accuracy": 0.58,
+   "scenario_ece": 0.1978310000000001,
+   "yes_no_accuracy": 0.72,
+   "p50_ms": 583.6551900000195,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "fr": {
+   "n": 100,
+   "scenario_accuracy": 0.63,
+   "scenario_ece": 0.15105399999999997,
+   "yes_no_accuracy": 0.69,
+   "p50_ms": 570.939711999963,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "de": {
+   "n": 100,
+   "scenario_accuracy": 0.62,
+   "scenario_ece": 0.155466,
+   "yes_no_accuracy": 0.69,
+   "p50_ms": 540.7266800000216,
+   "routes": {
+    "multilingual": 95,
+    "english": 5
+   }
+  },
+  "pt": {
+   "n": 100,
+   "scenario_accuracy": 0.59,
+   "scenario_ece": 0.16349400000000003,
+   "yes_no_accuracy": 0.71,
+   "p50_ms": 546.2804689999903,
+   "routes": {
+    "multilingual": 98,
+    "english": 2
+   }
+  },
+  "ru": {
+   "n": 100,
+   "scenario_accuracy": 0.63,
+   "scenario_ece": 0.139727,
+   "yes_no_accuracy": 0.72,
+   "p50_ms": 536.0782239999971,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "zh": {
+   "n": 100,
+   "scenario_accuracy": 0.59,
+   "scenario_ece": 0.21319000000000002,
+   "yes_no_accuracy": 0.69,
+   "p50_ms": 535.1691679999931,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "ja": {
+   "n": 100,
+   "scenario_accuracy": 0.66,
+   "scenario_ece": 0.16820600000000005,
+   "yes_no_accuracy": 0.705,
+   "p50_ms": 553.9341520000016,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "ar": {
+   "n": 100,
+   "scenario_accuracy": 0.5,
+   "scenario_ece": 0.25611,
+   "yes_no_accuracy": 0.65,
+   "p50_ms": 543.2254700000631,
+   "routes": {
+    "multilingual": 99,
+    "english": 1
+   }
+  },
+  "hi": {
+   "n": 100,
+   "scenario_accuracy": 0.53,
+   "scenario_ece": 0.22015199999999996,
+   "yes_no_accuracy": 0.745,
+   "p50_ms": 575.2804999999935,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "ko": {
+   "n": 100,
+   "scenario_accuracy": 0.56,
+   "scenario_ece": 0.21576599999999999,
+   "yes_no_accuracy": 0.735,
+   "p50_ms": 553.9783989998978,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "tr": {
+   "n": 100,
+   "scenario_accuracy": 0.5,
+   "scenario_ece": 0.1995329999999999,
+   "yes_no_accuracy": 0.76,
+   "p50_ms": 557.7102160000941,
+   "routes": {
+    "multilingual": 99,
+    "english": 1
+   }
+  },
+  "pl": {
+   "n": 100,
+   "scenario_accuracy": 0.52,
+   "scenario_ece": 0.23223100000000008,
+   "yes_no_accuracy": 0.685,
+   "p50_ms": 564.2473759999266,
+   "routes": {
+    "multilingual": 98,
+    "english": 2
+   }
+  },
+  "th": {
+   "n": 100,
+   "scenario_accuracy": 0.58,
+   "scenario_ece": 0.13552900000000004,
+   "yes_no_accuracy": 0.69,
+   "p50_ms": 588.8674030000111,
+   "routes": {
+    "multilingual": 100
+   }
+  },
+  "sw": {
+   "n": 100,
+   "scenario_accuracy": 0.17,
+   "scenario_ece": 0.502805,
+   "yes_no_accuracy": 0.6,
+   "p50_ms": 570.8953029999975,
+   "routes": {
+    "multilingual": 100
+   }
+  }
+ }
+}

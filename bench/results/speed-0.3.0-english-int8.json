@@ -1,0 +1,41 @@
+{
+ "version": "0.3.0",
+ "options": {
+  "precision": "int8"
+ },
+ "dir": "onnx/int8",
+ "hardware": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "cores": 4,
+  "node": "v22.22.0"
+ },
+ "load_ms": 1536,
+ "rss_mb": 808,
+ "cases": [
+  {
+   "case": "1 question, short ticket",
+   "p50_ms": 86,
+   "input_tokens": 54
+  },
+  {
+   "case": "3 questions, short ticket",
+   "p50_ms": 208,
+   "input_tokens": 180
+  },
+  {
+   "case": "10 questions, short ticket",
+   "p50_ms": 650,
+   "input_tokens": 601
+  },
+  {
+   "case": "1 question, ~450-token message",
+   "p50_ms": 609,
+   "input_tokens": 427
+  },
+  {
+   "case": "3 questions, 32 short tickets in one systemOneBatch (total)",
+   "p50_ms": 6687,
+   "input_tokens": 5952
+  }
+ ]
+}

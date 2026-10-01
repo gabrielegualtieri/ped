@@ -24,7 +24,7 @@ test("renderOptions: choice with/without descriptions, score levels, noul defaul
 
 test("buildSequence layout: [CLS] head [SEP] ([MASK] opt)* [SEP] state [SEP]", () => {
   const q = toInternal({ type: "choice", instructions: "which one", criteria: ["a", "bb"] });
-  const { ids: seq, markers } = buildSequence(encode, ids, "hello world", q, 512, 192);
+  const { ids: seq, markers } = buildSequence(encode, ids, "hello world", q, { maxLen: 512, headMaxLen: 192 });
   // head = "choice question: which one" -> 4 words
   assert.equal(seq[0], 1);
   assert.equal(seq[5], 2);
@@ -36,7 +36,7 @@ test("buildSequence layout: [CLS] head [SEP] ([MASK] opt)* [SEP] state [SEP]", (
 
 test("buildSequence truncates the state to max_len and drops markers past it", () => {
   const q = toInternal({ type: "noul", instructions: "is it" });
-  const { ids: seq, markers } = buildSequence(encode, ids, "w ".repeat(1000), q, 64, 32);
+  const { ids: seq, markers } = buildSequence(encode, ids, "w ".repeat(1000), q, { maxLen: 64, headMaxLen: 32 });
   assert.equal(seq.length, 64);
   assert.equal(seq[63], 2);
   assert.equal(markers.length, 2);
@@ -44,7 +44,7 @@ test("buildSequence truncates the state to max_len and drops markers past it", (
 
 test("buildSequence scrubs the mask token from user text", () => {
   const q = toInternal({ type: "noul", instructions: "x [MASK] y" });
-  const { ids: seq } = buildSequence(encode, ids, "state [MASK] here", q, 128, 64);
+  const { ids: seq } = buildSequence(encode, ids, "state [MASK] here", q, { maxLen: 128, headMaxLen: 64 });
   assert.equal(seq.filter((v) => v === 3).length, 2);
 });
 
