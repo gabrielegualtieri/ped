@@ -103,14 +103,21 @@ bundles, routing details and runtime options.
 
 ## Published checkpoints
 
-| Variant      | Location        | Encoder          | Parameters | Default context                      | Weights       |
-| ------------ | --------------- | ---------------- | ---------- | ------------------------------------ | ------------- |
-| English      | Repository root | ModernBERT-large | ~421M      | 512 tokens                           | ~1.7 GB, fp32 |
-| Multilingual | `multilingual/` | mmBERT-base      | ~322M      | 1024 tokens; configurable up to 8192 | ~1.3 GB, fp32 |
+| Variant      | Location        | Encoder          | Parameters | Default context                      | Weights       | int8 bundle                    |
+| ------------ | --------------- | ---------------- | ---------- | ------------------------------------ | ------------- | ------------------------------ |
+| English      | Repository root | ModernBERT-large | ~421M      | 512 tokens                           | ~1.7 GB, fp32 | `int8/`, ~0.68 GB              |
+| Multilingual | `multilingual/` | mmBERT-base      | ~322M      | 1024 tokens; configurable up to 8192 | ~1.3 GB, fp32 | `multilingual/int8/`, ~0.40 GB |
 
 The context budget includes the question header, options and state. The SDK truncates the state to
-fit. Budget roughly 2 GB of RAM per loaded checkpoint, plus memory for tokenization and batches.
-Actual memory use and latency depend on inputs, batch size and hardware.
+fit, or reads it in windows with `systemOneLong`. Budget roughly 2 GB of RAM per loaded fp32
+checkpoint, plus memory for tokenization and batches. Actual memory use and latency depend on inputs,
+batch size and hardware.
+
+Each checkpoint also has an int8 bundle (`precision: "int8"` in the SDK): the embedding table and the
+weights of the matrix multiplications quantized to int8 per output channel, activations quantized at run
+time. The MLP down projections stay in fp32: their inputs carry outlier activations, and quantizing them
+cost the English checkpoint 23 points of accuracy. It is 30–40% of the size and about 2x faster on
+CPU, within a point of fp32 on MASSIVE in 16 languages; fp32 is the default.
 
 ## Bundle layout
 
@@ -119,7 +126,7 @@ Each checkpoint contains the same five files:
 | File                              | Contents                                          |
 | --------------------------------- | ------------------------------------------------- |
 | `ped.onnx`                        | ONNX graph                                        |
-| `ped.onnx.data`                   | External fp32 weights                             |
+| `ped.onnx.data`                   | External weights (fp32, or int8 in `int8/`)       |
 | `ped_config.json`                 | Context limits and temperature calibration values |
 | `tokenizer/tokenizer.json`        | Tokenizer vocabulary and rules                    |
 | `tokenizer/tokenizer_config.json` | Tokenizer configuration                           |
@@ -144,10 +151,16 @@ The SDK builds the question/state sequences, batches them, applies the configura
 temperatures and converts outputs into typed answers. When using ONNX Runtime directly,
 reproduce this preprocessing and postprocessing; the graph takes tensors rather than raw text.
 
+Since 0.3 the graphs are exported with transformers' `eager` attention instead of `sdpa`: the same
+outputs (max logit difference ~1e-5) and the same weights file, faster on CPU.
+
 ## Calibration and limits
 
 - **English probabilities:** fitted temperature calibration, including per-option-count values, is supplied in `ped_config.json`.
 - **Multilingual probabilities:** all temperatures are `1.0`, with no fitted per-option-count values; these outputs are uncalibrated.
+- **Temperature range:** the SDK clamps temperatures to [0.5, 5] at load, as laya does, so the English `choice:11+` value 0.1006 is applied as 0.5.
+- **Your own calibration:** `fitTemperatures` in the SDK fits temperatures per question type and option count on a few hundred labeled examples.
+- **Yes/no questions:** the noul head answers "no" to most true statements, so the SDK asks a yes/no question as a two-option choice by default (laya issue #156); `systemOneLong` keeps the noul head, whose P(true) stays near 0 on unrelated text.
 - **Question header budget:** options must fit within 192 tokens for English or 256 for multilingual. The SDK throws if they do not fit. Keep choice sets concise.
 - **Context:** long states are truncated after the header and options. Increase `maxLen` for the multilingual checkpoint when needed, up to its supported 8192-token context.
 - **Routing:** language detection is heuristic. Explicit `lang` or `model` is preferable when that information is available.

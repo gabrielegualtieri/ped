@@ -1,0 +1,39 @@
+{
+ "version": "0.3.0",
+ "options": {},
+ "dir": "onnx",
+ "hardware": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "cores": 4,
+  "node": "v22.22.0"
+ },
+ "load_ms": 2407,
+ "rss_mb": 1660,
+ "cases": [
+  {
+   "case": "1 question, short ticket",
+   "p50_ms": 162,
+   "input_tokens": 54
+  },
+  {
+   "case": "3 questions, short ticket",
+   "p50_ms": 518,
+   "input_tokens": 180
+  },
+  {
+   "case": "10 questions, short ticket",
+   "p50_ms": 1510,
+   "input_tokens": 601
+  },
+  {
+   "case": "1 question, ~450-token message",
+   "p50_ms": 1093,
+   "input_tokens": 427
+  },
+  {
+   "case": "3 questions, 32 short tickets in one systemOneBatch (total)",
+   "p50_ms": 14742,
+   "input_tokens": 5952
+  }
+ ]
+}

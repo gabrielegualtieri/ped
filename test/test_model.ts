@@ -6,13 +6,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { Ped, Router } from "../src/index.js";
+import { Ped, Router, type AnswerOptions } from "../src/index.js";
+
+// JavaScript callers can pass anything: build such input without a type assertion
+const untyped = <T>(x: unknown): x is T => x !== undefined;
 
 const modelDir = process.env.PED_MODEL_DIR ?? path.resolve(import.meta.dirname, "../onnx");
 const available = existsSync(path.join(modelDir, "ped.onnx.data"));
 
 test("systemOne reproduces the Python reference output", { skip: !available && "no ONNX bundle on disk" }, async () => {
-  const ped = await Ped.load({ modelDir });
+  // the reference's own noul head: the default asks yes/no as a two-option choice
+  const ped = await Ped.load({ modelDir, noul: "native" });
   try {
     const r = await ped.systemOne(
       {
@@ -47,7 +51,7 @@ const multiDir = process.env.PED_MODEL_DIR_MULTILINGUAL ?? path.resolve(import.m
 const multiAvailable = existsSync(path.join(multiDir, "ped.onnx.data"));
 
 test("multilingual systemOne reproduces the Python reference output", { skip: !multiAvailable && "no multilingual ONNX bundle on disk" }, async () => {
-  const ped = await Ped.load({ modelDir: multiDir });
+  const ped = await Ped.load({ modelDir: multiDir, noul: "native" });
   try {
     const questions = {
       reparto: {
@@ -80,7 +84,7 @@ test("multilingual systemOne reproduces the Python reference output", { skip: !m
 });
 
 test("Router sends English and Italian to their checkpoints", { skip: !(available && multiAvailable) && "both ONNX bundles needed" }, async () => {
-  const router = new Router({ models: { english: { modelDir }, multilingual: { modelDir: multiDir } } });
+  const router = new Router({ models: { english: { modelDir }, multilingual: { modelDir: multiDir } }, noul: "native" });
   try {
     const q = { angry: { type: "noul", instructions: "Is the customer angry?" } } as const;
     const en = await router.systemOne("I cancelled two weeks ago and I still have no refund, this is unacceptable.", q);
@@ -90,5 +94,88 @@ test("Router sends English and Italian to their checkpoints", { skip: !(availabl
     assert.equal(it.answers.angry.noul, 0.7234);
   } finally {
     await router.close();
+  }
+});
+
+test("systemOneBatch answers each state as systemOne does", { skip: !multiAvailable && "no multilingual ONNX bundle on disk" }, async () => {
+  const ped = await Ped.load({ modelDir: multiDir });
+  try {
+    const questions = {
+      team: {
+        type: "choice",
+        instructions: "Which team should handle this message?",
+        criteria: { billing: "refunds, charges", shipping: "deliveries, tracking" },
+      },
+      angry: { type: "noul", instructions: "Is the customer angry?" },
+    } as const;
+    const states = [
+      "Il pacco è arrivato rotto, voglio i soldi indietro!",
+      "Where is my parcel? Tracking has not moved for a week.",
+      { body: "Mi avete addebitato due volte" },
+    ];
+    const batch = await ped.systemOneBatch(states, questions, { batchSize: 3 });
+    for (const [i, state] of states.entries()) {
+      const one = await ped.systemOne(state, questions);
+      const b = batch[i];
+      assert.ok(b);
+      assert.equal(b.answers.team.choice, one.answers.team.choice);
+      for (const k of ["billing", "shipping"] as const)
+        assert.ok(Math.abs((b.answers.team.probabilities[k] ?? 0) - (one.answers.team.probabilities[k] ?? 0)) <= 2e-4);
+      assert.ok(Math.abs(b.answers.angry.noul - one.answers.angry.noul) <= 2e-4);
+      assert.deepEqual(b.usage, one.usage);
+    }
+  } finally {
+    await ped.close();
+  }
+});
+
+test("systemOneLong reads a document past the sequence limit", { skip: !multiAvailable && "no multilingual ONNX bundle on disk" }, async () => {
+  const ped = await Ped.load({ modelDir: multiDir, maxLen: 320 });
+  try {
+    const filler = "The quarterly newsletter covers the new office opening, the summer party and the parking rules. ";
+    const doc = filler.repeat(20) + "Separately: I was charged twice for my subscription this month and I want a refund of the second charge.";
+    const q = { refund: { type: "noul", instructions: "Does the customer ask for a refund?" } } as const;
+    const cut = await ped.systemOne(doc, q);
+    assert.equal(cut.usage.truncated, true);
+    const long = await ped.systemOneLong(doc, q);
+    assert.ok(long.usage.windows > 2, `windows ${long.usage.windows}`);
+    const w = long.answers.refund.window;
+    assert.ok(w && w.token_end === long.usage.state_tokens, "the deciding window is the one holding the request");
+    assert.ok(long.answers.refund.noul > cut.answers.refund.noul + 0.2, `long ${long.answers.refund.noul} vs truncated ${cut.answers.refund.noul}`);
+    // without the request no window may claim it (asked as a two-option choice, one of these windows gets 0.99)
+    const none = await ped.systemOneLong(filler.repeat(20) + "Separately: thanks for the update, see you at the party.", q);
+    assert.ok(none.answers.refund.noul < 0.1, `no request: ${none.answers.refund.noul}`);
+    // a state that fits one window: systemOne's answers with the same noul mode, one window, no window attribution
+    const short = await ped.systemOneLong("I want a refund", q);
+    const one = await ped.systemOne("I want a refund", q, { noul: "native" });
+    assert.equal(short.usage.windows, 1);
+    assert.equal(short.answers.refund.noul, one.answers.refund.noul);
+    assert.equal(short.answers.refund.window, undefined);
+  } finally {
+    await ped.close();
+  }
+});
+
+test("option orders and noul-as-choice keep the answer shapes", { skip: !multiAvailable && "no multilingual ONNX bundle on disk" }, async () => {
+  const ped = await Ped.load({ modelDir: multiDir, noul: "choice", optionOrders: 3 });
+  try {
+    const r = await ped.systemOne("Il pacco è arrivato rotto, voglio i soldi indietro!", {
+      team: { type: "choice", instructions: "Which team?", criteria: { billing: "refunds", shipping: "deliveries", sales: "prices" } },
+      level: { type: "score", instructions: "How urgent?", criteria: ["low", "medium", "high"] },
+      angry: { type: "noul", instructions: "Is the customer angry?" },
+    });
+    const sum = Object.values(r.answers.team.probabilities).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(sum - 1) < 1e-3);
+    assert.equal(r.answers.angry.type, "noul");
+    assert.ok(r.answers.angry.noul >= 0 && r.answers.angry.noul <= 1);
+    assert.equal(r.answers.level.type, "score");
+    // 3 orders for the choice, 1 for the ordinal score, 2 (all there are) for the yes/no
+    const native = await ped.systemOne("x", { a: { type: "noul", instructions: "Is it?" } }, { noul: "native", optionOrders: 1 });
+    assert.equal(native.answers.a.type, "noul");
+    const maybe: unknown = { noul: "maybe" };
+    if (untyped<AnswerOptions>(maybe))
+      await assert.rejects(ped.systemOne("x", { a: { type: "noul", instructions: "Is it?" } }, maybe), /noul must be one of choice, native/);
+  } finally {
+    await ped.close();
   }
 });

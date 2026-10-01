@@ -1,0 +1,39 @@
+{
+ "version": "0.2.0",
+ "options": {},
+ "dir": "bench/.data/onnx-0.2.0/multilingual",
+ "hardware": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "cores": 4,
+  "node": "v22.22.0"
+ },
+ "load_ms": 2092,
+ "rss_mb": 888,
+ "cases": [
+  {
+   "case": "1 question, short ticket",
+   "p50_ms": 80,
+   "input_tokens": 64
+  },
+  {
+   "case": "3 questions, short ticket",
+   "p50_ms": 195,
+   "input_tokens": 191
+  },
+  {
+   "case": "10 questions, short ticket",
+   "p50_ms": 650,
+   "input_tokens": 632
+  },
+  {
+   "case": "1 question, ~450-token message",
+   "p50_ms": 607,
+   "input_tokens": 450
+  },
+  {
+   "case": "1 question, ~2,000-token document",
+   "p50_ms": 7203,
+   "input_tokens": 1968
+  }
+ ]
+}

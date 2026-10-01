@@ -48,10 +48,10 @@ with unit temperatures, so its probabilities are uncalibrated. See [Limits](#lim
 
 Two checkpoints are available, and the `Router` picks one per request:
 
-| Checkpoint     | Encoder                | Best at                                                                                                     | Download |
-| -------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- | -------- |
-| `english`      | ModernBERT-large, 421M | English text                                                                                                | 1.7 GB   |
-| `multilingual` | mmBERT-base, 322M      | 100+ languages (Italian, Spanish, German, French, Portuguese, Chinese, Japanese, Arabic, Hindi, Russian, …) | 1.3 GB   |
+| Checkpoint     | Encoder                | Best at                                                                                                     | Download             |
+| -------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------- |
+| `english`      | ModernBERT-large, 421M | English text                                                                                                | 1.7 GB, int8 0.68 GB |
+| `multilingual` | mmBERT-base, 322M      | 100+ languages (Italian, Spanish, German, French, Portuguese, Chinese, Japanese, Arabic, Hindi, Russian, …) | 1.3 GB, int8 0.40 GB |
 
 ## Install
 
@@ -59,9 +59,11 @@ Two checkpoints are available, and the `Router` picks one per request:
 npm install @heryox/ped
 ```
 
-Node.js 20 or newer. The ONNX weights (fp32) are downloaded from Hugging Face on first use and cached
-under `~/.cache/ped` (override with `PED_CACHE`). Budget roughly 2 GB of RAM per loaded checkpoint
-plus a few hundred MB per batch of questions.
+Node.js 20 or newer. The ONNX weights are downloaded from Hugging Face on first use and cached under
+`~/.cache/ped` (override with `PED_CACHE`): fp32 by default, or the int8 bundles with
+`precision: "int8"`, 30–40% of the download and about twice as fast at nearly the same accuracy (see
+[Benchmarks](#benchmarks)). Budget roughly 2 GB of RAM per loaded fp32 checkpoint (half to two thirds
+of that with int8), plus a few hundred MB per batch of questions.
 
 ## Usage: any language
 
@@ -145,7 +147,7 @@ import { Ped } from "@heryox/ped";
 const ped = await Ped.load(); // English; Ped.load({ subfolder: "multilingual" }) for the multilingual one
 
 const result = await ped.systemOne(
-  { subject: "Refund not received", body: "I cancelled two weeks ago and still have no refund..." },
+  { subject: "Refund not received", body: "I cancelled two weeks ago and still have no refund... I will dispute the charge with my bank." },
   {
     department: {
       type: "choice",
@@ -164,8 +166,9 @@ const result = await ped.systemOne(
 result.answers.department.choice; // "billing"
 result.answers.department.probabilities; // { billing: 0.9415, support: 0.031, sales: 0.0275 }
 result.answers.urgency.score; // 1.3886   (expected level, 0..3)
-result.answers.churn_risk.noul; // 0.0988   (P(true))
-result.usage.input_tokens; // 267
+result.answers.churn_risk.noul; // 0.8669   (P(true))
+result.answers.churn_risk.answer_confidence; // 0.8669   (the probability of the reported answer)
+result.usage.input_tokens; // 256
 
 await ped.close();
 ```
@@ -187,11 +190,169 @@ await Ped.load({
   executionProviders: ["cpu"], // onnxruntime-node execution providers
   sessionOptions: { intraOpNumThreads: 4 },
   maxLen: 8192, // longer states: the multilingual checkpoint reads up to 8192 tokens (default 1024)
+  precision: "int8", // the int8 bundle: 30-40% of the download, ~2x faster, about as accurate (Benchmarks)
+  noul: "choice", // yes/no as a two-option choice (systemOne's default); "native": the noul head (systemOneLong's)
+  optionOrders: 1, // >1 averages each choice over that many option orders (slower, removes position bias)
+  temperatures: { temperature_by_options: { "choice:3-5": 1.4 } }, // e.g. from fitTemperatures, clamped to [0.5, 5]
 });
 ```
 
 Every question of one `systemOne` call is batched into a single run. Runtime depends on the actual
 input length, number of questions, execution provider and hardware, rather than `maxLen` alone.
+
+### What every answer and result carries
+
+- `answer_confidence` on every answer: the probability of the reported option (max p), the number
+  to put a threshold on once the probabilities are calibrated for your task. `confidence` is
+  1 − normalized entropy: how concentrated the whole distribution is.
+- `usage.truncated` / `usage.state_tokens_dropped` / `usage.truncated_questions`: whether the state
+  had to be cut to fit the sequence, and by how much. A truncated state was not fully read: use
+  `systemOneLong`.
+- `usage.options` (only when it happens): a question had so many or such long options that some lost
+  their own tokens to the 192/256-token header budget.
+
+## Long documents
+
+`systemOne` reads at most `max_len` tokens (512 English, 1024 multilingual) and cuts the rest.
+`systemOneLong` reads the whole state in overlapping windows instead and combines the answers per
+question: a yes/no takes the window with the highest P(true) (the statement holds if any part of the
+document supports it), a choice or a score takes the most confident window. `answer.window` says
+which window decided, as token offsets into the state.
+
+```ts
+const r = await router.systemOneLong(longEmailThread, {
+  refund: { type: "noul", instructions: "Does the customer ask for a refund?" },
+  topic: { type: "choice", instructions: "What is the thread about?", criteria: ["billing", "shipping", "technical"] },
+});
+r.answers.refund.noul; // decided by the window that holds the request
+r.answers.refund.window; // { index: 4, token_start: 624, token_end: 936, count: 6 }
+r.usage.windows; // 6
+```
+
+Yes/no questions are read with the checkpoint's own noul head here (`noul: "native"`), not as the
+two-option choice `systemOne` uses by default: taking the highest P(true) over many windows needs a
+P(true) that stays near 0 on unrelated text, and the two-option choice reached 0.99 on some unrelated
+windows of a test document. Set `noul` to override. A state that fits one window gets exactly
+`systemOne`'s answers with the same `noul`. Options: `window` (state tokens per window), `stride`
+(default half a window). A conversation passed as a list keeps its newest turns when `systemOne` has to
+cut it.
+
+## Many states at once
+
+```ts
+const results = await router.systemOneBatch(tickets, questions); // one result per ticket, same order
+```
+
+States of similar length share ONNX Runtime runs (`batchSize`, default 64 sequences per run). On the
+4-core benchmark machine that is 5–15% faster than one `systemOne` per state, since ONNX Runtime already
+spreads a single request over the cores. The router routes every state on its own.
+
+## Calibrating probabilities on your data
+
+The checkpoints are trained to report honest probabilities, but they come out over-confident on new
+tasks. A few hundred labeled examples are enough to fit one temperature per question type and option
+count:
+
+```ts
+const fit = await ped.fitTemperatures(examples.map((e) => ({ state: e.text, questions, labels: { department: e.team, urgent: e.isUrgent } })));
+fit.after.ece; // expected calibration error on the examples, before: fit.before.ece
+ped.setTemperatures(fit); // or Ped.load({ temperatures: fit }) next time
+```
+
+Labels are the option key for a choice, the level index for a score and `true` / `false` for a yes/no.
+Temperatures are clamped to [0.5, 5] (as upstream does); buckets with fewer than `minPerBucket` (100)
+examples fall back to the question type's temperature.
+
+## Benchmarks
+
+Every number here comes from the scripts in [`bench/`](bench/README.md) and the result files in
+`bench/results/` (`yarn bench:report` prints these tables), through the public API, with each
+version's published bundles. Accuracy does not depend on the machine; latency is the one named below.
+
+<!-- bench:start -->
+
+Measured on a 4-core cloud VM (Intel Xeon @ 2.10 GHz, AVX-512 VNNI), Node 22, ONNX Runtime 1.30 on CPU.
+
+### Accuracy and calibration: MASSIVE, 16 languages
+
+[MASSIVE](https://huggingface.co/datasets/mteb/amazon_massive_scenario) voice-assistant requests, the same
+100 in each of 16 languages (en, it, es, fr, de, pt, ru, zh, ja, ar, hi, ko, tr, pl, th, sw). Each request
+is one `router.systemOne` call with three questions: its scenario among 18 (a choice), and two yes/no
+questions, one true and one false. The router picks the checkpoint as in production; latency is per call.
+
+| Version    | Scenario accuracy | Scenario ECE | Yes/no accuracy | Yes/no AUROC | p50 per call | p95 per call |
+| ---------- | ----------------- | ------------ | --------------- | ------------ | ------------ | ------------ |
+| 0.2.0      | 56.2%             | 0.187        | 60.0%           | 0.776        | 651 ms       | 1,383 ms     |
+| 0.3.0      | 56.2%             | 0.177        | 70.2%           | 0.799        | 562 ms       | 1,194 ms     |
+| 0.3.0 int8 | 56.1%             | 0.177        | 69.4%           | 0.793        | 322 ms       | 604 ms       |
+
+<details><summary>Per language</summary>
+
+| Language | Scenario 0.2.0 | Scenario 0.3.0 | Scenario 0.3.0 int8 | Yes/no 0.2.0 | Yes/no 0.3.0 | Yes/no 0.3.0 int8 |
+| -------- | -------------- | -------------- | ------------------- | ------------ | ------------ | ----------------- |
+| en       | 75.0%          | 75.0%          | 72.0%               | 66.0%        | 78.0%        | 78.0%             |
+| it       | 58.0%          | 58.0%          | 58.0%               | 55.0%        | 66.0%        | 63.5%             |
+| es       | 58.0%          | 58.0%          | 59.0%               | 59.5%        | 72.0%        | 71.0%             |
+| fr       | 63.0%          | 63.0%          | 66.0%               | 61.0%        | 69.0%        | 68.0%             |
+| de       | 62.0%          | 62.0%          | 60.0%               | 59.5%        | 69.0%        | 69.5%             |
+| pt       | 59.0%          | 59.0%          | 61.0%               | 54.5%        | 71.0%        | 68.0%             |
+| ru       | 63.0%          | 63.0%          | 63.0%               | 63.0%        | 72.0%        | 72.5%             |
+| zh       | 59.0%          | 59.0%          | 55.0%               | 60.0%        | 69.0%        | 68.0%             |
+| ja       | 66.0%          | 66.0%          | 62.0%               | 59.0%        | 70.5%        | 73.0%             |
+| ar       | 50.0%          | 50.0%          | 50.0%               | 60.0%        | 65.0%        | 64.0%             |
+| hi       | 53.0%          | 53.0%          | 57.0%               | 61.5%        | 74.5%        | 74.5%             |
+| ko       | 56.0%          | 56.0%          | 55.0%               | 60.0%        | 73.5%        | 75.0%             |
+| tr       | 50.0%          | 50.0%          | 53.0%               | 61.5%        | 76.0%        | 76.0%             |
+| pl       | 52.0%          | 52.0%          | 54.0%               | 61.5%        | 68.5%        | 67.0%             |
+| th       | 58.0%          | 58.0%          | 54.0%               | 59.5%        | 69.0%        | 67.0%             |
+| sw       | 17.0%          | 17.0%          | 19.0%               | 59.0%        | 60.0%        | 55.5%             |
+
+</details>
+
+- **Yes/no:** 0.3.0 answers 70% of the yes/no questions right instead of 60%, better in all 16
+  languages, and ranks true above false statements more often (AUROC 0.776 → 0.799).
+- **Scenario:** the same answers, since the model is the same. On the English requests the clamped
+  `choice:11+` temperature takes the calibration error (ECE) from 0.186 to 0.118.
+- **int8:** within a point of fp32 overall (single languages move by up to 4 points either way, as
+  100 requests allow), 1.7x faster per call.
+- Swahili is the multilingual checkpoint's weak spot (17%, against 6% by chance).
+
+### Speed
+
+Median of 15 runs per case, one process per configuration. Short cases vary by about ±10% between runs
+on this VM. The `systemOneBatch` rows are 32 tickets in one call; against 32 `systemOne` calls in the same
+process they are 5–15% faster.
+
+**English checkpoint** (p50 of each case)
+
+|                                                             | 0.2.0    | 0.3.0     | 0.3.0 int8 |
+| ----------------------------------------------------------- | -------- | --------- | ---------- |
+| Load                                                        | 2,532 ms | 2,407 ms  | 1,536 ms   |
+| Memory after load (RSS)                                     | 1,662 MB | 1,660 MB  | 808 MB     |
+| 1 question, short ticket                                    | 221 ms   | 162 ms    | 86 ms      |
+| 3 questions, short ticket                                   | 543 ms   | 518 ms    | 208 ms     |
+| 10 questions, short ticket                                  | 1,655 ms | 1,510 ms  | 650 ms     |
+| 1 question, ~450-token message                              | 1,526 ms | 1,093 ms  | 609 ms     |
+| 3 questions, 32 short tickets in one systemOneBatch (total) | –        | 14,742 ms | 6,687 ms   |
+
+**Multilingual checkpoint** (p50 of each case)
+
+|                                                             | 0.2.0    | 0.3.0    | 0.3.0 int8 |
+| ----------------------------------------------------------- | -------- | -------- | ---------- |
+| Load                                                        | 2,092 ms | 2,034 ms | 1,961 ms   |
+| Memory after load (RSS)                                     | 888 MB   | 886 MB   | 587 MB     |
+| 1 question, short ticket                                    | 80 ms    | 67 ms    | 35 ms      |
+| 3 questions, short ticket                                   | 195 ms   | 187 ms   | 100 ms     |
+| 10 questions, short ticket                                  | 650 ms   | 568 ms   | 306 ms     |
+| 1 question, ~450-token message                              | 607 ms   | 457 ms   | 299 ms     |
+| 1 question, ~2,000-token document                           | 7,203 ms | 4,077 ms | 3,673 ms   |
+| 3 questions, 32 short tickets in one systemOneBatch (total) | –        | 6,313 ms | 2,988 ms   |
+| 1 question, ~2,000-token document, systemOneLong            | –        | 5,323 ms | 3,434 ms   |
+
+<!-- bench:end -->
+
+Coming next: the same requests against Jev, accuracy and latency side by side, and the full MASSIVE
+test set (51 languages, 2,974 requests each), on a 64-core server.
 
 ## Exporting the ONNX bundles yourself
 
@@ -202,18 +363,30 @@ bundle from a newer checkpoint or from a variant that is not published:
 ```sh
 cd export
 uv venv -p 3.12 .venv
-uv pip install -p .venv/bin/python torch transformers safetensors onnx onnxscript onnxruntime huggingface_hub
+uv pip install -p .venv/bin/python -r requirements.txt
 .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('convaiinnovations/laya', local_dir='model', allow_patterns=['model.safetensors','encoder/*','tokenizer/*','rl_agent_config.json','rl_common.py','rl_agent_api.py','multilingual/*'])"
-.venv/bin/python export_onnx.py model ../onnx                            # English
-.venv/bin/python export_onnx.py model/multilingual ../onnx/multilingual  # multilingual
+.venv/bin/python export_onnx.py model ../onnx --int8                            # English (+ int8/)
+.venv/bin/python export_onnx.py model/multilingual ../onnx/multilingual --int8  # multilingual (+ int8/)
 ```
 
-Each run prints the max logit difference vs. PyTorch (≈1e-5). Then `Ped.load({ modelDir: "./onnx" })`,
-or publish the bundles with the English one at the repo root and the multilingual one in `multilingual/`:
+Each run prints the max logit difference against the PyTorch reference (~1e-5) and, with `--int8`, the
+int8 bundle's difference from the fp32 one. The graph uses transformers' `eager` attention: the same
+results as the `sdpa` graph of 0.2 without its NaN guards around every attention layer, and faster at
+every length measured (`--attention sdpa` exports the 0.2 graph). `--attention banded`
+(`export/ped_attention.py`) computes the sliding-window layers as a band, each token against the 128
+around it, instead of a full L × L matrix: twice as fast as the 0.2 graph on 2,000–4,000-token inputs with
+a third less memory, but slower below about 1,000 tokens, so the published bundles do not use it. Then
+`Ped.load({ modelDir: "./onnx" })`, or publish the bundles with the English one at the repo root, the
+multilingual one in `multilingual/` and each int8 bundle in its `int8/` subfolder:
 
 ```sh
-hf upload heryox/ped-onnx onnx/multilingual multilingual
+hf upload heryox/ped-onnx onnx . --exclude "multilingual/*"  # English bundle, its int8/ and the model card
+hf upload heryox/ped-onnx onnx/multilingual multilingual     # multilingual bundle and its int8/
 ```
+
+`export_onnx.py --quantize ../onnx` builds `../onnx/int8` from an fp32 bundle you already have, without
+PyTorch. The export needs about 5.5 GB of memory for the English checkpoint; the quantization runs in its
+own process and peaks at about 7.5 GB.
 
 A bundle is the five files listed in `BUNDLE_FILES`: `ped.onnx`, `ped.onnx.data`, `ped_config.json`,
 `tokenizer/tokenizer.json`, `tokenizer/tokenizer_config.json`.
@@ -224,9 +397,11 @@ A bundle is the five files listed in `BUNDLE_FILES`: `ped.onnx`, `ped.onnx.data`
   `systemOne` throws otherwise. Fewer than about 20 options per `choice` question is the model's own
   recommendation.
 - The state is truncated to `max_len` after the question header: 512 tokens for the English checkpoint,
-  1024 for the multilingual one (up to 8192 with `maxLen`).
+  1024 for the multilingual one (up to 8192 with `maxLen`). `systemOneLong` reads longer states in
+  windows.
 - The multilingual checkpoint ships without fitted temperatures, so its probabilities are the raw
-  model's; the English checkpoint's are temperature-calibrated.
+  model's, and over-confident: on MASSIVE the best temperature is between 1.4 and 2.4 in every language
+  measured. Fit your own with `fitTemperatures`. The English checkpoint's are temperature-calibrated.
 - Language detection is a heuristic: script detection is exact, the Latin-language guess is
   best-effort. Pass `lang` or `model` when you already know.
 - A JSON state is serialized like Python's `json.dumps(ensure_ascii=False)` so that tokens match the

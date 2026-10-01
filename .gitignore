@@ -5,4 +5,8 @@ onnx/ped.onnx.data
 export/model/
 export/.venv/
 .DS_Store
-onnx/multilingual/
+onnx/multilingual
+bench/.data/
+bench/results/*.tmp.json
+onnx/int8
+__pycache__/

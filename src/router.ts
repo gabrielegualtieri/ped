@@ -10,15 +10,16 @@
  * confident while wrong on scripts it cannot read, so its confidence cannot be used to catch that.
  */
 import { analyse, type Detection } from "./lang.js";
-import { Ped, type PedOptions } from "./ped.js";
-import type { Question, SystemOneResult } from "./types.js";
+import type { AnswerOptions } from "./requests.js";
+import { Ped, type BatchOptions, type LongOptions, type PedOptions } from "./ped.js";
+import type { Question, SystemOneLongResult, SystemOneResult } from "./types.js";
 
 export type ModelName = "english" | "multilingual";
 
 /** Where each checkpoint lives inside the bundle repo: the English one at the root. */
 export const MODEL_SUBFOLDERS: Readonly<Record<ModelName, string | undefined>> = { english: undefined, multilingual: "multilingual" };
 
-export interface RouteOptions {
+export interface RouteOptions extends AnswerOptions {
   /** use this checkpoint and skip detection */
   model?: ModelName;
   /** the state's language when the caller knows it: "it", "en-US", "pt_BR.UTF-8"; "C", "und", "mul" are ignored */
@@ -46,6 +47,7 @@ export interface RouterOptions extends Omit<PedOptions, "modelDir" | "subfolder"
 }
 
 export type RoutedResult<Q extends Record<string, Question>> = SystemOneResult<Q> & { routing: RouteDecision };
+export type RoutedLongResult<Q extends Record<string, Question>> = SystemOneLongResult<Q> & { routing: RouteDecision };
 
 const MODELS: readonly ModelName[] = ["english", "multilingual"];
 const ENGLISH_SUBTAGS = new Set(["en", "eng", "english"]);
@@ -133,7 +135,43 @@ export class Router {
   async systemOne<Q extends Record<string, Question>>(state: unknown, questions: Q, opts: RouteOptions = {}): Promise<RoutedResult<Q>> {
     const routing = this.route(state, opts);
     const ped = await this.load(routing.model);
-    return { ...(await ped.systemOne(state, questions)), routing };
+    return { ...(await ped.systemOne(state, questions, opts)), routing };
+  }
+
+  /**
+   * Route every state on its own, then answer each checkpoint's share in batched runs (see
+   * `Ped.systemOneBatch`). Results come back in the order of `states`.
+   */
+  async systemOneBatch<Q extends Record<string, Question>>(
+    states: readonly unknown[],
+    questions: Q,
+    opts: RouteOptions & BatchOptions = {},
+  ): Promise<RoutedResult<Q>[]> {
+    const routes = states.map((s) => this.route(s, opts));
+    const results: RoutedResult<Q>[] = new Array<RoutedResult<Q>>(states.length);
+    for (const model of MODELS) {
+      const idx = routes.flatMap((r, i) => (r.model === model ? [i] : []));
+      if (idx.length === 0) continue;
+      const ped = await this.load(model);
+      const out = await ped.systemOneBatch(
+        idx.map((i) => states[i]),
+        questions,
+        opts,
+      );
+      idx.forEach((i, j) => {
+        const r = out[j];
+        const routing = routes[i];
+        if (r && routing) results[i] = { ...r, routing };
+      });
+    }
+    return results;
+  }
+
+  /** Route the state, then read it in windows with that checkpoint (see `Ped.systemOneLong`). */
+  async systemOneLong<Q extends Record<string, Question>>(state: unknown, questions: Q, opts: RouteOptions & LongOptions = {}): Promise<RoutedLongResult<Q>> {
+    const routing = this.route(state, opts);
+    const ped = await this.load(routing.model);
+    return { ...(await ped.systemOneLong(state, questions, opts)), routing };
   }
 
   /** Release every loaded checkpoint. The router can be used again afterwards; it reloads on demand. */

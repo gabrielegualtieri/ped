@@ -1,0 +1,10 @@
+# The versions the published 0.3 bundles were exported and quantized with. Newer ones should work; the
+# export prints its parity check either way.
+torch==2.14.1
+transformers==5.18.0
+safetensors==0.8.0
+onnx==1.23.1
+onnxscript==0.7.2
+onnxruntime==1.30.0
+huggingface_hub==1.33.0
+numpy==2.5.3
