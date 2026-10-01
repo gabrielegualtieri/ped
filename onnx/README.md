@@ -2,7 +2,6 @@
 license: apache-2.0
 base_model:
   - convaiinnovations/laya
-  - convaiinnovations/laya-multilingual
 library_name: onnx
 tags:
   - onnx
@@ -15,34 +14,160 @@ tags:
   - multilingual
 ---
 
-# Ped — ONNX export of the decision model
+# PED
 
-ONNX export of [convaiinnovations/laya](https://huggingface.co/convaiinnovations/laya) for use with
-[`@heryox/ped`](https://www.npmjs.com/package/@heryox/ped) from Node.js / TypeScript, or with ONNX
-Runtime directly. Two checkpoints, one bundle each:
+<p align="center">
+  <img src="https://huggingface.co/heryox/ped-onnx/resolve/main/assets/ped-logo.png" alt="PED — multilingual AI decision model" width="680" />
+</p>
 
-| Folder | Checkpoint | Encoder | Context |
-|---|---|---|---|
-| repo root | English (`convaiinnovations/laya`) | ModernBERT-large, 421M parameters | 512 |
-| `multilingual/` | multilingual, 100+ languages (`convaiinnovations/laya` `multilingual/`) | mmBERT-base, 322M parameters | 1024 (up to 8192) |
+<p align="center"><strong>Typed decisions. Local inference. Multilingual by design.</strong></p>
 
-Each bundle holds:
+<p align="center">
+  <a href="https://github.com/gabrielegualtieri/ped">GitHub · source and SDK</a> ·
+  <a href="https://www.npmjs.com/package/@heryox/ped">npm · @heryox/ped</a>
+</p>
 
-| File | Contents |
-|---|---|
-| `ped.onnx` / `ped.onnx.data` | graph + fp32 weights |
-| `ped_config.json` | `max_len`, `head_max_len` and the per-cardinality temperatures from `rl_agent_config.json` |
-| `tokenizer/` | the checkpoint's tokenizer |
+**PED is a multilingual AI decision model and TypeScript toolkit by
+[Gabriele Gualtieri (heryox)](https://github.com/gabrielegualtieri).** Turn text, emails, tickets and
+structured data into typed choices, ordered scores and yes/no probabilities. Define the decisions
+your application needs, then evaluate every question in **one ONNX forward pass**.
 
-Inputs: `input_ids` [B,L] int64, `attention_mask` [B,L] int64, `marker_pos` [B,K] int64, `marker_mask` [B,K] bool, `qtype` [B] int64.
-Outputs: `logits` [B,K] float32 (uncalibrated; masked slots = -1e4), `act_probs` [B,2] float32.
+This repository publishes PED's English and multilingual ONNX bundles for local inference with
+[`@heryox/ped`](https://www.npmjs.com/package/@heryox/ped) or ONNX Runtime directly. The PED project
+brings the checkpoints, a strongly typed Node.js SDK and automatic language routing together.
 
-Built with [`export/export_onnx.py`](https://github.com/gabrielegualtieri/ped/blob/main/export/export_onnx.py);
-max logit difference vs. the PyTorch reference ≈ 1e-5.
+## Built for decisions you can use in code
+
+| Decision | What you define                      | What PED returns                                       |
+| -------- | ------------------------------------ | ------------------------------------------------------ |
+| `choice` | Named options and their descriptions | Selected option, probability per option and confidence |
+| `score`  | An ordered rubric                    | Expected level, distribution and confidence            |
+| `noul`   | A yes/no statement                   | P(true)                                                |
+
+- **Local inference:** after the initial download, model inference runs on your machine with ONNX Runtime.
+- **English + 100+ languages:** two checkpoints, with automatic or explicit routing through the SDK.
+- **Multiple questions, one run:** classification, scoring and binary decisions can share a batch.
+- **Native Node.js / TypeScript:** use the SDK without Python or PyTorch at runtime.
+- **Task definitions in your application:** describe the options or rubric for each request.
+
+Applications include ticket triage, intent classification, email routing, rubric scoring and
+decision steps in automation or agent workflows. Validate the checkpoint on your own task and
+language before choosing operating thresholds.
+
+## Quick start
+
+Requires Node.js 20 or newer.
+
+```sh
+npm install @heryox/ped
+```
 
 ```ts
 import { Router } from "@heryox/ped";
-const router = new Router(); // English text -> repo root, other languages -> multilingual/, each downloaded on first use
+
+const router = new Router();
+
+try {
+  const result = await router.systemOne(
+    "Il pacco doveva arrivare la settimana scorsa e il tracciamento non si aggiorna.",
+    {
+      department: {
+        type: "choice",
+        instructions: "Which team should handle this message?",
+        criteria: {
+          billing: "charges, payments, refunds, invoices",
+          shipping: "deliveries, packages, tracking",
+          technical: "app bugs, crashes, errors",
+        },
+      },
+      urgent: { type: "noul", instructions: "Does this message need urgent attention?" },
+    },
+    { lang: "it" },
+  );
+
+  console.log(result.answers.department.choice);
+  console.log(result.answers.department.probabilities);
+  console.log(result.answers.urgent.noul);
+  console.log(result.routing.model); // "multilingual"
+} finally {
+  await router.close();
+}
 ```
 
-Weights are Convai Innovations' and remain under Apache 2.0. Export code: MIT, https://github.com/gabrielegualtieri/ped
+Each checkpoint downloads on first use and is cached under `~/.cache/ped` by default. Set
+`PED_CACHE` to choose another cache location. Pass `lang` when the language is known, or set
+`model: "english"` / `model: "multilingual"` to select a checkpoint directly.
+
+See the [SDK README](https://github.com/gabrielegualtieri/ped#readme) for scoring examples, local
+bundles, routing details and runtime options.
+
+## Published checkpoints
+
+| Variant      | Location        | Encoder          | Parameters | Default context                      | Weights       |
+| ------------ | --------------- | ---------------- | ---------- | ------------------------------------ | ------------- |
+| English      | Repository root | ModernBERT-large | ~421M      | 512 tokens                           | ~1.7 GB, fp32 |
+| Multilingual | `multilingual/` | mmBERT-base      | ~322M      | 1024 tokens; configurable up to 8192 | ~1.3 GB, fp32 |
+
+The context budget includes the question header, options and state. The SDK truncates the state to
+fit. Budget roughly 2 GB of RAM per loaded checkpoint, plus memory for tokenization and batches.
+Actual memory use and latency depend on inputs, batch size and hardware.
+
+## Bundle layout
+
+Each checkpoint contains the same five files:
+
+| File                              | Contents                                          |
+| --------------------------------- | ------------------------------------------------- |
+| `ped.onnx`                        | ONNX graph                                        |
+| `ped.onnx.data`                   | External fp32 weights                             |
+| `ped_config.json`                 | Context limits and temperature calibration values |
+| `tokenizer/tokenizer.json`        | Tokenizer vocabulary and rules                    |
+| `tokenizer/tokenizer_config.json` | Tokenizer configuration                           |
+
+### ONNX interface
+
+| Input            | Type  | Shape    |
+| ---------------- | ----- | -------- |
+| `input_ids`      | int64 | `[B, L]` |
+| `attention_mask` | int64 | `[B, L]` |
+| `marker_pos`     | int64 | `[B, K]` |
+| `marker_mask`    | bool  | `[B, K]` |
+| `qtype`          | int64 | `[B]`    |
+
+| Output      | Type    | Shape    | Meaning                                             |
+| ----------- | ------- | -------- | --------------------------------------------------- |
+| `logits`    | float32 | `[B, K]` | Uncalibrated option logits; masked slots use `-1e4` |
+| `act_probs` | float32 | `[B, 2]` | Action-head probabilities                           |
+
+`B` is the number of questions, `L` the padded sequence length and `K` the padded option count.
+The SDK builds the question/state sequences, batches them, applies the configuration's
+temperatures and converts outputs into typed answers. When using ONNX Runtime directly,
+reproduce this preprocessing and postprocessing; the graph takes tensors rather than raw text.
+
+## Calibration and limits
+
+- **English probabilities:** fitted temperature calibration, including per-option-count values, is supplied in `ped_config.json`.
+- **Multilingual probabilities:** all temperatures are `1.0`, with no fitted per-option-count values; these outputs are uncalibrated.
+- **Question header budget:** options must fit within 192 tokens for English or 256 for multilingual. The SDK throws if they do not fit. Keep choice sets concise.
+- **Context:** long states are truncated after the header and options. Increase `maxLen` for the multilingual checkpoint when needed, up to its supported 8192-token context.
+- **Routing:** language detection is heuristic. Explicit `lang` or `model` is preferable when that information is available.
+- **Quality:** support for a language does not imply equal accuracy across languages or tasks. Check decisions and probability thresholds against representative data.
+
+## Provenance and licenses
+
+PED is developed and maintained by **Gabriele Gualtieri (heryox)**. The
+[SDK and export tooling](https://github.com/gabrielegualtieri/ped) are published under **MIT**, with
+the existing upstream notices preserved.
+
+The pretrained encoder and decision-head weights originate from
+[Convai Innovations' Laya](https://huggingface.co/convaiinnovations/laya), with the multilingual
+checkpoint supplied in that repository's `multilingual/` directory. They remain under
+**Apache 2.0**. This release packages those checkpoints for ONNX and adds the PED TypeScript SDK,
+batched inference and language routing.
+
+The language detection and routing decision are derived from the upstream `laya` package and
+retain its [Apache 2.0 license](https://github.com/gabrielegualtieri/ped/blob/main/licenses/laya-LICENSE).
+The request/response format follows the upstream `RLAgent.system_one` reference and TypeSafe Jev's
+`system_one` API. The conversion is implemented in
+[`export/export_onnx.py`](https://github.com/gabrielegualtieri/ped/blob/main/export/export_onnx.py),
+which includes a parity check against the PyTorch reference.
