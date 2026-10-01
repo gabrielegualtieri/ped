@@ -1,4 +1,4 @@
-"""Export the Laya decision model (ModernBERT encoder + decision head) to a single ONNX file.
+"""Export the decision model (convaiinnovations/laya: ModernBERT encoder + decision head) to a single ONNX file.
 
 Usage:  .venv/bin/python export_onnx.py [model_dir] [out_dir]
 Inputs : input_ids [B,L] int64, attention_mask [B,L] int64, marker_pos [B,K] int64, marker_mask [B,K] bool, qtype [B] int64
@@ -49,7 +49,7 @@ ex = (
 )
 ex[1][1, 30:] = 0  # second row padded
 
-out = os.path.join(out_dir, "laya.onnx")
+out = os.path.join(out_dir, "ped.onnx")
 # grad must stay enabled: nn.TransformerEncoderLayer's fused "fast path" (not exportable) is only taken under no_grad.
 batch, seq, opts = torch.export.Dim("batch"), torch.export.Dim("seq", min=8), torch.export.Dim("options", min=2)
 prog = torch.onnx.export(
@@ -64,7 +64,7 @@ prog.save(out, external_data=False)
 # ship the tokenizer + calibration config next to the graph
 shutil.copytree(os.path.join(model_dir, "tokenizer"), os.path.join(out_dir, "tokenizer"), dirs_exist_ok=True)
 json.dump({k: cfg[k] for k in ("max_len", "head_max_len", "temperature", "temperature_by_options")},
-          open(os.path.join(out_dir, "laya_config.json"), "w"), indent=1)
+          open(os.path.join(out_dir, "ped_config.json"), "w"), indent=1)
 
 # parity check
 import onnxruntime as ort  # noqa: E402
@@ -75,4 +75,4 @@ sess = ort.InferenceSession(out, providers=["CPUExecutionProvider"])
 o = sess.run(None, {"input_ids": ex[0].numpy(), "attention_mask": ex[1].numpy(), "marker_pos": ex[2].numpy(),
                     "marker_mask": ex[3].numpy(), "qtype": ex[4].numpy()})
 print("max |dlogits| =", np.abs(o[0] - ref_logits.numpy()).max(), " max |dact| =", np.abs(o[1] - ref_act.numpy()).max())
-print("wrote", out, "%.0f MB" % (sum(os.path.getsize(os.path.join(out_dir, f)) for f in os.listdir(out_dir) if f.startswith("laya")) / 1e6))
+print("wrote", out, "%.0f MB" % (sum(os.path.getsize(os.path.join(out_dir, f)) for f in os.listdir(out_dir) if f.startswith("ped")) / 1e6))

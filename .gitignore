@@ -1,7 +1,7 @@
 node_modules/
 dist/
-onnx/laya.onnx
-onnx/laya.onnx.data
+onnx/ped.onnx
+onnx/ped.onnx.data
 export/model/
 export/.venv/
 .DS_Store

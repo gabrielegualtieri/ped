@@ -1,20 +1,20 @@
 /**
  * End-to-end check against numbers produced by the Python reference (rl_agent_api.RLAgent.system_one)
- * on the same input. Skips when no ONNX bundle is available locally (set LAYA_MODEL_DIR to point at one).
+ * on the same input. Skips when no ONNX bundle is available locally (set PED_MODEL_DIR to point at one).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { Laya } from "../src/index.js";
+import { Ped } from "../src/index.js";
 
-const modelDir = process.env.LAYA_MODEL_DIR ?? path.resolve(import.meta.dirname, "../onnx");
-const available = existsSync(path.join(modelDir, "laya.onnx.data"));
+const modelDir = process.env.PED_MODEL_DIR ?? path.resolve(import.meta.dirname, "../onnx");
+const available = existsSync(path.join(modelDir, "ped.onnx.data"));
 
 test("systemOne reproduces the Python reference output", { skip: !available && "no ONNX bundle on disk" }, async () => {
-  const laya = await Laya.load({ modelDir });
+  const ped = await Ped.load({ modelDir });
   try {
-    const r = await laya.systemOne(
+    const r = await ped.systemOne(
       {
         subject: "Refund not received",
         body: "I cancelled my subscription two weeks ago and I still have not received my refund. This is the third time I am writing. If this is not resolved I will dispute the charge with my bank.",
@@ -37,6 +37,6 @@ test("systemOne reproduces the Python reference output", { skip: !available && "
     assert.deepEqual(r.answers.urgency.probabilities, { "0": 0.1752, "1": 0.2947, "2": 0.4962, "3": 0.0338 });
     assert.equal(r.answers.churn_risk.noul, 0.0988);
   } finally {
-    await laya.close();
+    await ped.close();
   }
 });

@@ -1,8 +1,8 @@
-import { Laya } from "../src/index.js";
+import { Ped } from "../src/index.js";
 
 // Pass { modelDir: "./onnx" } to use a local export instead of the Hugging Face bundle.
-const laya = await Laya.load({
-  modelDir: process.env.LAYA_MODEL_DIR,
+const ped = await Ped.load({
+  modelDir: process.env.PED_MODEL_DIR,
   onProgress: ({ file, received, total }) => {
     if (total) process.stderr.write(`\r${file}: ${((received / total) * 100).toFixed(0)}%   `);
   },
@@ -14,7 +14,7 @@ const state = {
 };
 
 const t0 = performance.now();
-const result = await laya.systemOne(state, {
+const result = await ped.systemOne(state, {
   department: {
     type: "choice",
     instructions: "Which team should handle this ticket?",
@@ -32,4 +32,4 @@ console.log(JSON.stringify(result, null, 1));
 
 // the answer types follow the question types
 console.log("→", result.answers.department.choice, result.answers.urgency.score, result.answers.churn_risk.noul);
-await laya.close();
+await ped.close();

@@ -1,8 +1,8 @@
 /**
- * Laya — TypeScript port of the checkpoint's rl_agent_api.py on top of onnxruntime-node.
+ * Ped — TypeScript port of the checkpoint's rl_agent_api.py on top of onnxruntime-node.
  *
- * `Laya.load()` resolves the ONNX bundle (a local directory, or the published Hugging Face repo, cached
- * under ~/.cache/receptron-laya), builds the tokenizer, and opens the session. `systemOne()` then answers
+ * `Ped.load()` resolves the ONNX bundle (a local directory, or the published Hugging Face repo, cached
+ * under ~/.cache/ped), builds the tokenizer, and opens the session. `systemOne()` then answers
  * any number of typed questions about one state in a single forward pass, exactly as the Python
  * reference does (same sequence layout, same per-cardinality temperature, same rounding).
  */
@@ -12,11 +12,11 @@ import * as ort from "onnxruntime-node";
 import { Tokenizer } from "@huggingface/tokenizers";
 import { buildSequence, confidenceFromProbs, QTYPES, renderOptions, softmax, tempBucket, toInternal, type SpecialIds } from "./sequence.js";
 import { ensureBundle, type DownloadOptions } from "./download.js";
-import type { Answer, LayaConfig, Question, SystemOneResult } from "./types.js";
+import type { Answer, PedConfig, Question, SystemOneResult } from "./types.js";
 
-export interface LayaOptions extends DownloadOptions {
+export interface PedOptions extends DownloadOptions {
   /**
-   * Directory holding laya.onnx, laya.onnx.data, laya_config.json and tokenizer/ (the output of
+   * Directory holding ped.onnx, ped.onnx.data, ped_config.json and tokenizer/ (the output of
    * export/export_onnx.py). When given, nothing is downloaded and the Hugging Face options are ignored.
    */
   modelDir?: string;
@@ -28,20 +28,20 @@ export interface LayaOptions extends DownloadOptions {
 
 const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
 
-export class Laya {
+export class Ped {
   private constructor(
     private readonly session: ort.InferenceSession,
     private readonly tok: Tokenizer,
-    readonly config: LayaConfig,
+    readonly config: PedConfig,
     private readonly ids: SpecialIds,
     /** where the bundle was loaded from */
     readonly modelDir: string,
   ) {}
 
-  static async load(opts: LayaOptions = {}): Promise<Laya> {
+  static async load(opts: PedOptions = {}): Promise<Ped> {
     const modelDir = opts.modelDir ? path.resolve(opts.modelDir) : await ensureBundle(opts);
     const read = async (f: string): Promise<unknown> => JSON.parse(await readFile(path.join(modelDir, f), "utf8"));
-    const config = (await read("laya_config.json")) as LayaConfig;
+    const config = (await read("ped_config.json")) as PedConfig;
     const tok = new Tokenizer((await read("tokenizer/tokenizer.json")) as object, (await read("tokenizer/tokenizer_config.json")) as object);
     const id = (t: string) => {
       const v = tok.token_to_id(t);
@@ -49,12 +49,12 @@ export class Laya {
       return v;
     };
     const ids: SpecialIds = { cls: id("[CLS]"), sep: id("[SEP]"), mask: id("[MASK]"), pad: id("[PAD]"), maskTok: "[MASK]" };
-    const session = await ort.InferenceSession.create(path.join(modelDir, "laya.onnx"), {
+    const session = await ort.InferenceSession.create(path.join(modelDir, "ped.onnx"), {
       executionProviders: opts.executionProviders ?? ["cpu"],
       graphOptimizationLevel: "all",
       ...opts.sessionOptions,
     });
-    return new Laya(session, tok, config, ids, modelDir);
+    return new Ped(session, tok, config, ids, modelDir);
   }
 
   private readonly encode = (text: string): number[] => this.tok.encode(text, { add_special_tokens: false }).ids;
@@ -145,7 +145,7 @@ export class Laya {
       }
     });
     return {
-      model: "laya",
+      model: "ped",
       answers: answers as SystemOneResult<Q>["answers"],
       usage: { input_tokens: nTokens, output_tokens: 0 },
     };

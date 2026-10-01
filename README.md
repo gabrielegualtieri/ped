@@ -1,9 +1,9 @@
-# @receptron/laya
+# @gabrielegualtieri/ped
 
-Run **[Laya](https://huggingface.co/convaiinnovations/laya)** — the open-source, Jev-compatible
+**Ped** runs **[Laya](https://huggingface.co/convaiinnovations/laya)** — the open-source, Jev-compatible
 _System 1 decision model_ by Convai Innovations — from Node.js / TypeScript.
 
-Laya does not generate text. You hand it a state (a ticket, an email, a JSON object) and typed
+The model does not generate text. You hand it a state (a ticket, an email, a JSON object) and typed
 questions, and it returns every answer with calibrated probabilities in **one forward pass**:
 
 - `choice` — pick one option, with a probability per option
@@ -18,21 +18,21 @@ matches the Python implementation to four decimal places.
 ## Install
 
 ```sh
-npm install @receptron/laya
+npm install @gabrielegualtieri/ped
 ```
 
 Node.js 20 or newer. The ONNX weights (about 1.7 GB, fp32) are downloaded from Hugging Face on first
-use and cached under `~/.cache/receptron-laya` (override with `LAYA_CACHE`). Budget roughly 2 GB of
+use and cached under `~/.cache/ped` (override with `PED_CACHE`). Budget roughly 2 GB of
 RAM for the loaded model plus a few hundred MB per batch of questions.
 
 ## Usage
 
 ```ts
-import { Laya } from "@receptron/laya";
+import { Ped } from "@gabrielegualtieri/ped";
 
-const laya = await Laya.load();
+const ped = await Ped.load();
 
-const result = await laya.systemOne(
+const result = await ped.systemOne(
   { subject: "Refund not received", body: "I cancelled two weeks ago and still have no refund..." },
   {
     department: {
@@ -55,7 +55,7 @@ result.answers.urgency.score; // 1.3886   (expected level, 0..3)
 result.answers.churn_risk.noul; // 0.0988   (P(true))
 result.usage.input_tokens; // 267
 
-await laya.close();
+await ped.close();
 ```
 
 The answer types follow the question types, so `result.answers.department` is a `ChoiceAnswer`
@@ -64,12 +64,12 @@ and `result.answers.churn_risk` a `NoulAnswer` without any casting.
 ### Options
 
 ```ts
-await Laya.load({
+await Ped.load({
   modelDir: "./onnx", // use a local export instead of downloading (see below)
-  repo: "receptron/laya-onnx", // Hugging Face repo that holds the ONNX bundle
+  repo: "gabrielegualtieri/ped-onnx", // Hugging Face repo that holds the ONNX bundle
   subfolder: "multilingual", // a checkpoint variant inside that repo
   revision: "main", // pin a commit hash for reproducible results; "main" follows the repo
-  cacheDir: "/var/cache/laya",
+  cacheDir: "/var/cache/ped",
   token: process.env.HF_TOKEN, // for private repos
   onProgress: ({ file, received, total }) => {}, // download progress
   executionProviders: ["cpu"], // onnxruntime-node execution providers
@@ -94,8 +94,8 @@ uv pip install -p .venv/bin/python torch transformers safetensors onnx onnxscrip
 .venv/bin/python export_onnx.py model ../onnx   # prints the max logit difference vs. PyTorch (≈1e-5)
 ```
 
-Then `Laya.load({ modelDir: "./onnx" })`. The bundle is the five files listed in `BUNDLE_FILES`:
-`laya.onnx`, `laya.onnx.data`, `laya_config.json`, `tokenizer/tokenizer.json`, `tokenizer/tokenizer_config.json`.
+Then `Ped.load({ modelDir: "./onnx" })`. The bundle is the five files listed in `BUNDLE_FILES`:
+`ped.onnx`, `ped.onnx.data`, `ped_config.json`, `tokenizer/tokenizer.json`, `tokenizer/tokenizer_config.json`.
 
 ## Limits
 
@@ -109,10 +109,10 @@ Then `Laya.load({ modelDir: "./onnx" })`. The bundle is the five files listed in
 
 ```sh
 yarn install
-yarn test        # unit tests; the model test runs when ./onnx holds a bundle (or LAYA_MODEL_DIR)
+yarn test        # unit tests; the model test runs when ./onnx holds a bundle (or PED_MODEL_DIR)
 yarn typecheck
 yarn build
-LAYA_MODEL_DIR=./onnx yarn example
+PED_MODEL_DIR=./onnx yarn example
 ```
 
 ## License

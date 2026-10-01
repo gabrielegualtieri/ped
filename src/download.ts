@@ -12,19 +12,19 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 /** Files that make up one exported checkpoint, relative to the bundle directory. */
-export const BUNDLE_FILES = ["laya.onnx", "laya.onnx.data", "laya_config.json", "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json"] as const;
+export const BUNDLE_FILES = ["ped.onnx", "ped.onnx.data", "ped_config.json", "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json"] as const;
 
 /** Where the exported ONNX bundle is published. */
-export const DEFAULT_REPO = "receptron/laya-onnx";
+export const DEFAULT_REPO = "gabrielegualtieri/ped-onnx";
 
 export interface DownloadOptions {
-  /** Hugging Face repo id (default: receptron/laya-onnx) */
+  /** Hugging Face repo id (default: gabrielegualtieri/ped-onnx) */
   repo?: string;
   /** git revision in that repo (default: main) */
   revision?: string;
   /** subfolder inside the repo, e.g. "multilingual" (default: repo root = English checkpoint) */
   subfolder?: string;
-  /** local cache root (default: $LAYA_CACHE or ~/.cache/receptron-laya) */
+  /** local cache root (default: $PED_CACHE or ~/.cache/ped) */
   cacheDir?: string;
   /** Hugging Face token, for private repos (default: $HF_TOKEN) */
   token?: string;
@@ -33,7 +33,7 @@ export interface DownloadOptions {
 }
 
 export function defaultCacheDir(): string {
-  return process.env.LAYA_CACHE ?? path.join(process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache"), "receptron-laya");
+  return process.env.PED_CACHE ?? path.join(process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache"), "ped");
 }
 
 async function fileSize(p: string): Promise<number | null> {

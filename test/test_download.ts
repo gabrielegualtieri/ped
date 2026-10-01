@@ -18,7 +18,7 @@ function stubFetch(payload: string, calls: string[]) {
 }
 
 test("ensureBundle downloads every file once, then only HEAD-checks", async () => {
-  const cacheDir = await mkdtemp(path.join(tmpdir(), "laya-"));
+  const cacheDir = await mkdtemp(path.join(tmpdir(), "ped-"));
   const calls: string[] = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = stubFetch("v1", calls);
@@ -26,7 +26,7 @@ test("ensureBundle downloads every file once, then only HEAD-checks", async () =
     const dir = await ensureBundle({ repo: "acme/bundle", cacheDir, subfolder: "multilingual" });
     assert.equal(dir, path.join(cacheDir, "acme--bundle", "main", "multilingual/"));
     assert.equal(calls.length, BUNDLE_FILES.length);
-    assert.ok(calls[0]?.startsWith("GET https://huggingface.co/acme/bundle/resolve/main/multilingual/laya.onnx"));
+    assert.ok(calls[0]?.startsWith("GET https://huggingface.co/acme/bundle/resolve/main/multilingual/ped.onnx"));
     assert.equal(await readFile(path.join(dir, "tokenizer/tokenizer.json"), "utf8"), "tokenizer.json:v1");
 
     calls.length = 0;
@@ -34,11 +34,11 @@ test("ensureBundle downloads every file once, then only HEAD-checks", async () =
     assert.deepEqual(new Set(calls.map((c) => c.split(" ")[0])), new Set(["HEAD"]));
 
     // a size change upstream triggers a re-download of that file only
-    await writeFile(path.join(dir, "laya_config.json"), "stale");
+    await writeFile(path.join(dir, "ped_config.json"), "stale");
     calls.length = 0;
     await ensureBundle({ repo: "acme/bundle", cacheDir, subfolder: "multilingual" });
     assert.equal(calls.filter((c) => c.startsWith("GET")).length, 1);
-    assert.equal(await readFile(path.join(dir, "laya_config.json"), "utf8"), "laya_config.json:v1");
+    assert.equal(await readFile(path.join(dir, "ped_config.json"), "utf8"), "ped_config.json:v1");
   } finally {
     globalThis.fetch = realFetch;
     await rm(cacheDir, { recursive: true, force: true });
@@ -46,7 +46,7 @@ test("ensureBundle downloads every file once, then only HEAD-checks", async () =
 });
 
 test("ensureBundle uses a populated cache when the network is down", async () => {
-  const cacheDir = await mkdtemp(path.join(tmpdir(), "laya-"));
+  const cacheDir = await mkdtemp(path.join(tmpdir(), "ped-"));
   const calls: string[] = [];
   const realFetch = globalThis.fetch;
   try {
@@ -58,10 +58,10 @@ test("ensureBundle uses a populated cache when the network is down", async () =>
       throw new TypeError("fetch failed", { cause: new Error("getaddrinfo EAI_AGAIN huggingface.co") });
     }) as typeof fetch;
     assert.equal(await ensureBundle({ repo: "acme/bundle", cacheDir }), dir);
-    assert.equal(await readFile(path.join(dir, "laya_config.json"), "utf8"), "laya_config.json:v1");
+    assert.equal(await readFile(path.join(dir, "ped_config.json"), "utf8"), "ped_config.json:v1");
 
     // a missing file still has to be downloaded, so that failure is reported
-    await rm(path.join(dir, "laya_config.json"));
+    await rm(path.join(dir, "ped_config.json"));
     await assert.rejects(ensureBundle({ repo: "acme/bundle", cacheDir }), /fetch failed/);
   } finally {
     globalThis.fetch = realFetch;
@@ -70,7 +70,7 @@ test("ensureBundle uses a populated cache when the network is down", async () =>
 });
 
 test("ensureBundle surfaces HTTP errors and leaves no partial file", async () => {
-  const cacheDir = await mkdtemp(path.join(tmpdir(), "laya-"));
+  const cacheDir = await mkdtemp(path.join(tmpdir(), "ped-"));
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response("nope", { status: 404, statusText: "Not Found" });
   try {

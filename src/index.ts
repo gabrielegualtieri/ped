@@ -1,4 +1,4 @@
-export { Laya, type LayaOptions } from "./laya.js";
+export { Ped, type PedOptions } from "./ped.js";
 export { ensureBundle, defaultCacheDir, BUNDLE_FILES, DEFAULT_REPO, type DownloadOptions } from "./download.js";
 export type {
   Question,
@@ -12,5 +12,5 @@ export type {
   ScoreAnswer,
   NoulAnswer,
   SystemOneResult,
-  LayaConfig,
+  PedConfig,
 } from "./types.js";

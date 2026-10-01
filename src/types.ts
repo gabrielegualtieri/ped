@@ -1,4 +1,4 @@
-/** Request / response shapes. They follow TypeSafe Jev's `system_one` API, which Laya reproduces. */
+/** Request / response shapes. They follow TypeSafe Jev's `system_one` API, which Ped reproduces. */
 
 export type QuestionType = "choice" | "score" | "noul";
 
@@ -60,8 +60,8 @@ export interface SystemOneResult<Q extends Record<string, Question>> {
   usage: { input_tokens: number; output_tokens: number };
 }
 
-/** laya_config.json, written by export/export_onnx.py from the checkpoint's rl_agent_config.json */
-export interface LayaConfig {
+/** ped_config.json, written by export/export_onnx.py from the checkpoint's rl_agent_config.json */
+export interface PedConfig {
   max_len: number;
   head_max_len: number;
   temperature: [number, number, number];
