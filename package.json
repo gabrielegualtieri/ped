@@ -1,6 +1,6 @@
 {
   "name": "@heryox/ped",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "PED by heryox: multilingual AI decisions for Node.js and TypeScript. Typed choices, scores and probabilities in one local ONNX inference pass.",
   "license": "MIT",
   "author": "heryox",
@@ -46,12 +46,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit && tsc -p examples/tsconfig.json --noEmit",
-    "test": "tsx --test test/test_download.ts test/test_lang.ts test/test_model.ts test/test_router.ts test/test_sequence.ts test/test_tokenizer.ts",
-    "format": "prettier --write \"{src,test,examples}/**/*.ts\" \"*.{json,md}\"",
-    "format:check": "prettier --check \"{src,test,examples}/**/*.ts\" \"*.{json,md}\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit && tsc -p examples/tsconfig.json --noEmit && tsc -p bench/tsconfig.json --noEmit",
+    "test": "tsx --test test/test_calibrate.ts test/test_download.ts test/test_lang.ts test/test_model.ts test/test_requests.ts test/test_router.ts test/test_sequence.ts test/test_tokenizer.ts",
+    "format": "prettier --write \"{src,test,examples,bench}/**/*.ts\" \"*.{json,md}\"",
+    "format:check": "prettier --check \"{src,test,examples,bench}/**/*.ts\" \"*.{json,md}\"",
     "example": "tsx examples/basic.ts",
     "example:router": "tsx examples/router.ts",
+    "bench:massive": "tsx bench/massive.ts",
+    "bench:speed": "tsx bench/speed.ts",
+    "bench:report": "tsx bench/report.ts",
     "prepublishOnly": "tsc -p tsconfig.json"
   },
   "dependencies": {

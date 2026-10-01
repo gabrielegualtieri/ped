@@ -3,24 +3,47 @@
  *
  * `Ped.load()` resolves the ONNX bundle (a local directory, or the published Hugging Face repo, cached
  * under ~/.cache/ped), builds the tokenizer, and opens the session. `systemOne()` then answers
- * any number of typed questions about one state in a single forward pass, exactly as the Python
- * reference does (same sequence layout, same per-cardinality temperature, same rounding).
+ * any number of typed questions about one state in a single forward pass, with the Python
+ * reference's sequence layout, per-cardinality temperature and rounding.
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as ort from "onnxruntime-node";
 import { Tokenizer } from "@huggingface/tokenizers";
-import { buildSequence, confidenceFromProbs, QTYPES, renderOptions, softmax, tempBucket, toInternal, type SpecialIds } from "./sequence.js";
+import { aggregateWindows, clampedTemperatures } from "./answers.js";
+import { fitTemperatureMap, calibrationRecords, type CalibrationExample, type CalibrationOptions, type CalibrationResult } from "./calibrate.js";
 import { ensureBundle, type DownloadOptions } from "./download.js";
+import { runSequences } from "./infer.js";
+import { decodeRequest, encodeRequest, type AnswerOptions, type Item, type NoulMode } from "./requests.js";
+import { encodeState, type SpecialIds } from "./sequence.js";
 import { alignWithRustTokenizer, specialIds, type TokenizerConfig, type TokenizerJson } from "./tokenizer.js";
-import type { Answer, PedConfig, Question, SystemOneResult } from "./types.js";
+import type { PedConfig, Question, SystemOneLongResult, SystemOneResult } from "./types.js";
 
-export interface PedOptions extends DownloadOptions {
+export type Precision = "fp32" | "int8";
+
+/**
+ * Yes/no questions are asked as a two-option choice unless told otherwise: on MASSIVE (16 languages) the
+ * noul head answers "no" to most true statements (P(true) around 0.2 for them) and gets 0.55-0.61 right,
+ * the two-option choice 0.67-0.74 (bench/). `noul: "native"` keeps the checkpoint's own head.
+ */
+const DEFAULT_NOUL: NoulMode = "choice";
+/** `systemOneLong` keeps the noul head: see there */
+const LONG_NOUL: NoulMode = "native";
+const PRECISIONS: readonly Precision[] = ["fp32", "int8"];
+const NOUL_MODES: readonly NoulMode[] = ["choice", "native"];
+
+export interface PedOptions extends DownloadOptions, AnswerOptions {
   /**
    * Directory holding ped.onnx, ped.onnx.data, ped_config.json and tokenizer/ (the output of
    * export/export_onnx.py). When given, nothing is downloaded and the Hugging Face options are ignored.
    */
   modelDir?: string;
+  /**
+   * "fp32" (default) or "int8": the int8 bundle (the `int8/` subfolder of the checkpoint) is 30-40% of the
+   * download, half to two thirds of the memory and about 2x faster on CPU, within about a point of fp32
+   * (README, Benchmarks). Selects what is downloaded; with `modelDir`, point it at the bundle you want.
+   */
+  precision?: Precision;
   /** onnxruntime execution providers (default: ["cpu"]) */
   executionProviders?: ort.InferenceSession.ExecutionProviderConfig[];
   /** extra onnxruntime session options (merged over the defaults) */
@@ -31,9 +54,21 @@ export interface PedOptions extends DownloadOptions {
    * for long documents; time grows with the real input length, not with the limit.
    */
   maxLen?: number;
+  /** temperatures over the bundle's, e.g. the result of `fitTemperatures`; every value is clamped to [0.5, 5] */
+  temperatures?: Partial<Pick<PedConfig, "temperature" | "temperature_by_options">>;
 }
 
-const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
+export interface BatchOptions extends AnswerOptions {
+  /** most sequences per ONNX Runtime run (a state's questions always share a run); default 64 */
+  batchSize?: number;
+}
+
+export interface LongOptions extends BatchOptions {
+  /** state tokens per window; default: what one question leaves for the state (max_len - head_max_len - 8) */
+  window?: number;
+  /** tokens between window starts; default window / 2 */
+  stride?: number;
+}
 
 export class Ped {
   private constructor(
@@ -43,16 +78,29 @@ export class Ped {
     private readonly ids: SpecialIds,
     /** where the bundle was loaded from */
     readonly modelDir: string,
+    private readonly defaults: AnswerOptions,
   ) {}
 
   static async load(opts: PedOptions = {}): Promise<Ped> {
-    const modelDir = opts.modelDir ? path.resolve(opts.modelDir) : await ensureBundle(opts);
+    if (opts.precision !== undefined && !PRECISIONS.includes(opts.precision)) {
+      throw new Error(`precision must be one of ${PRECISIONS.join(", ")}, got ${JSON.stringify(opts.precision)}`);
+    }
+    // the int8 bundle of a checkpoint sits in its int8/ subfolder
+    const subfolder = opts.precision === "int8" ? [opts.subfolder, "int8"].filter(Boolean).join("/") : opts.subfolder;
+    const modelDir = opts.modelDir ? path.resolve(opts.modelDir) : await ensureBundle({ ...opts, subfolder });
     const read = async (f: string): Promise<unknown> => JSON.parse(await readFile(path.join(modelDir, f), "utf8"));
     const config = (await read("ped_config.json")) as PedConfig;
     if (opts.maxLen !== undefined) {
       if (!Number.isInteger(opts.maxLen) || opts.maxLen < 1) throw new Error(`maxLen must be a positive integer, got ${opts.maxLen}`);
       config.max_len = opts.maxLen;
     }
+    Object.assign(
+      config,
+      clampedTemperatures({
+        temperature: opts.temperatures?.temperature ?? config.temperature,
+        temperature_by_options: { ...config.temperature_by_options, ...opts.temperatures?.temperature_by_options },
+      }),
+    );
     const tokConfig = (await read("tokenizer/tokenizer_config.json")) as TokenizerConfig;
     const tokJson = (await read("tokenizer/tokenizer.json")) as TokenizerJson;
     const tok = new Tokenizer(tokJson, tokConfig);
@@ -63,101 +111,122 @@ export class Ped {
       graphOptimizationLevel: "all",
       ...opts.sessionOptions,
     });
-    return new Ped(session, tok, config, ids, modelDir);
+    return new Ped(session, tok, config, ids, modelDir, { noul: opts.noul, optionOrders: opts.optionOrders });
   }
 
   private readonly encode = (text: string): number[] => this.tok.encode(text, { add_special_tokens: false }).ids;
 
+  private answerOptions(opts: AnswerOptions = {}): Required<AnswerOptions> {
+    const optionOrders = opts.optionOrders ?? this.defaults.optionOrders ?? 1;
+    if (!Number.isInteger(optionOrders) || optionOrders < 1) throw new Error(`optionOrders must be a positive integer, got ${optionOrders}`);
+    const noul = opts.noul ?? this.defaults.noul ?? DEFAULT_NOUL;
+    if (!NOUL_MODES.includes(noul)) throw new Error(`noul must be one of ${NOUL_MODES.join(", ")}, got ${JSON.stringify(noul)}`);
+    return { noul, optionOrders };
+  }
+
   /** Answer every question about `state` in one forward pass (Jev's `system_one` request/response shape). */
-  async systemOne<Q extends Record<string, Question>>(state: unknown, questions: Q): Promise<SystemOneResult<Q>> {
-    const qids = Object.keys(questions);
-    if (qids.length === 0) {
-      throw new Error("systemOne: at least one question is required");
-    }
-    const items = qids.map((qid) => {
-      const q = toInternal(questions[qid] as Question);
-      const { ids, markers } = buildSequence(this.encode, this.ids, state, q, this.config.max_len, this.config.head_max_len);
-      if (markers.length !== renderOptions(q).length) {
-        throw new Error(`question ${JSON.stringify(qid)}: options do not fit in head_max_len=${this.config.head_max_len} tokens`);
+  async systemOne<Q extends Record<string, Question>>(state: unknown, questions: Q, opts?: AnswerOptions): Promise<SystemOneResult<Q>> {
+    const [result] = await this.systemOneBatch([state], questions, opts);
+    if (!result) throw new Error("systemOne: no result");
+    return result;
+  }
+
+  /**
+   * Answer the same questions about many states. States of similar length share ONNX Runtime runs (5-15%
+   * faster than one `systemOne` per state on 4 cores); results come back in the order of `states`.
+   */
+  async systemOneBatch<Q extends Record<string, Question>>(states: readonly unknown[], questions: Q, opts: BatchOptions = {}): Promise<SystemOneResult<Q>[]> {
+    const ao = this.answerOptions(opts);
+    const batchSize = opts.batchSize ?? 64;
+    const requests = states.map((state) => encodeRequest(this.encode, this.ids, this.config, state, questions, ao));
+    // similar lengths together: less padding
+    const longest = (items: Item[]) => Math.max(...items.map((it) => it.ids.length));
+    const order = requests.map((_, i) => i).sort((a, b) => longest(requests[a]?.items ?? []) - longest(requests[b]?.items ?? []));
+    const results: SystemOneResult<Q>[] = new Array<SystemOneResult<Q>>(states.length);
+    for (let start = 0; start < order.length;) {
+      let end = start;
+      let n = 0;
+      while (end < order.length && (end === start || n + (requests[order[end] ?? 0]?.items.length ?? 0) <= batchSize)) {
+        n += requests[order[end] ?? 0]?.items.length ?? 0;
+        end++;
       }
-      return { q, ids, markers, qtype: QTYPES[q.t] };
-    });
-
-    // rl_common.collate_items: right-pad to the longest sequence / widest option set in the batch
-    const n = items.length;
-    const L = Math.max(...items.map((it) => it.ids.length));
-    const K = Math.max(...items.map((it) => it.markers.length));
-    const inputIds = new BigInt64Array(n * L).fill(BigInt(this.ids.pad));
-    const attention = new BigInt64Array(n * L);
-    const markerPos = new BigInt64Array(n * K);
-    const markerMask = new Uint8Array(n * K);
-    const qtype = new BigInt64Array(n);
-    let nTokens = 0;
-    items.forEach((it, i) => {
-      it.ids.forEach((v, j) => {
-        inputIds[i * L + j] = BigInt(v);
-        attention[i * L + j] = 1n;
-      });
-      nTokens += it.ids.length;
-      it.markers.forEach((m, j) => {
-        markerPos[i * K + j] = BigInt(m);
-        markerMask[i * K + j] = 1;
-      });
-      qtype[i] = BigInt(it.qtype);
-    });
-
-    const out = await this.session.run({
-      input_ids: new ort.Tensor("int64", inputIds, [n, L]),
-      attention_mask: new ort.Tensor("int64", attention, [n, L]),
-      marker_pos: new ort.Tensor("int64", markerPos, [n, K]),
-      marker_mask: new ort.Tensor("bool", markerMask, [n, K]),
-      qtype: new ort.Tensor("int64", qtype, [n]),
-    });
-    const logits = out["logits"]?.data;
-    const act = out["act_probs"];
-    if (!(logits instanceof Float32Array) || !act || !(act.data instanceof Float32Array)) {
-      throw new Error("unexpected model outputs (expected float32 logits and act_probs)");
-    }
-    const actData = act.data;
-    const nAct = act.dims[1] ?? 1;
-
-    const answers: Record<string, Answer> = {};
-    items.forEach((it, r) => {
-      const qid = qids[r] as string;
-      const k = it.markers.length;
-      const temp = this.config.temperature_by_options[tempBucket(it.qtype, k)] ?? this.config.temperature[it.qtype] ?? 1;
-      const p = softmax(Array.from(logits.subarray(r * K, r * K + k), (v) => v / temp));
-      const ext = { act_probability: actData[r * nAct] ?? 0 };
-      const q = it.q;
-      if (q.t === "choice") {
-        const keys = Object.keys(q.crit as Record<string, string | null>);
-        const best = p.indexOf(Math.max(...p));
-        answers[qid] = {
-          type: "choice",
-          choice: keys[best] as string,
-          probabilities: Object.fromEntries(keys.map((kk, i) => [kk, round4(p[i] ?? 0)])),
-          confidence: round4(confidenceFromProbs(p)),
-          rl_agent: ext,
-        };
-      } else if (q.t === "score") {
-        const crit = q.crit as readonly string[];
-        answers[qid] = {
-          type: "score",
-          score: round4(p.reduce((s, v, i) => s + i * v, 0)),
-          legend: Object.fromEntries(crit.map((c, i) => [String(i), c])),
-          probabilities: Object.fromEntries(p.map((v, i) => [String(i), round4(v)])),
-          confidence: round4(confidenceFromProbs(p)),
-          rl_agent: ext,
-        };
-      } else {
-        answers[qid] = { type: "noul", noul: round4(p[1] ?? 0), rl_agent: ext };
+      const chunk = order.slice(start, end);
+      const out = await runSequences(
+        this.session,
+        this.ids.pad,
+        chunk.flatMap((i) => requests[i]?.items ?? []),
+      );
+      let offset = 0;
+      for (const i of chunk) {
+        const req = requests[i];
+        if (!req) continue;
+        const rows = req.items.map((_, t) => ({ logits: out.logits[offset + t] ?? [], act: out.act[offset + t] ?? 0 }));
+        offset += req.items.length;
+        const { answers, usage } = decodeRequest(this.config, req.qids, req.items, rows);
+        results[i] = { model: "ped", answers: answers as SystemOneResult<Q>["answers"], usage };
       }
-    });
-    return {
-      model: "ped",
-      answers: answers as SystemOneResult<Q>["answers"],
-      usage: { input_tokens: nTokens, output_tokens: 0 },
-    };
+      start = end;
+    }
+    return results;
+  }
+
+  /**
+   * Answer questions about a state longer than one sequence by reading it in overlapping windows
+   * (upstream `predict_long`): no part of the document is dropped. Per question, a yes/no takes the window
+   * with the highest P(true) and a choice or score the most confident window; `answer.window` names it.
+   *
+   * Yes/no questions use the checkpoint's noul head here unless `noul` is set (at load or per call): the
+   * highest P(true) over many windows needs a P(true) that stays near 0 on unrelated text. The noul head
+   * gives under 0.03 on unrelated windows, the two-option choice up to 0.99 on some of them.
+   * A state that fits one window gets exactly `systemOne`'s answers with the same `noul`.
+   */
+  async systemOneLong<Q extends Record<string, Question>>(state: unknown, questions: Q, options: LongOptions = {}): Promise<SystemOneLongResult<Q>> {
+    const opts = { ...options, noul: options.noul ?? this.defaults.noul ?? LONG_NOUL };
+    const budget = opts.window && opts.window > 0 ? opts.window : Math.max(64, this.config.max_len - this.config.head_max_len - 8);
+    const stateIds = encodeState(this.encode, this.ids, state);
+    if (stateIds.length <= budget) {
+      const r = await this.systemOne(state, questions, opts);
+      return { ...r, usage: { ...r.usage, truncated: Number(r.usage.truncated), windows: 1 } };
+    }
+    const step = opts.stride && opts.stride > 0 ? opts.stride : Math.max(1, Math.floor(budget / 2));
+    const windows: string[] = [];
+    const spans: [number, number][] = [];
+    for (let i = 0; i < stateIds.length; i += step) {
+      // decoded back to text and re-tokenized as a normal state; the overlap absorbs boundary drift. No
+      // clean-up: it would glue punctuation to words ("a ." -> "a."), and transformers skips it for BPE too
+      windows.push(this.tok.decode(stateIds.slice(i, i + budget), { clean_up_tokenization_spaces: false }));
+      spans.push([i, Math.min(i + budget, stateIds.length)]);
+      if (i + budget >= stateIds.length) break;
+    }
+    const results = await this.systemOneBatch(windows, questions, opts);
+    const { answers, usage } = aggregateWindows(Object.keys(questions), results, spans, stateIds.length);
+    return { model: "ped", answers: answers as SystemOneLongResult<Q>["answers"], usage };
+  }
+
+  /**
+   * Fit temperatures on labeled examples (NLL per question type and option count, the upstream
+   * `fit_temperatures`). Returns them; apply with `setTemperatures` or `Ped.load({ temperatures })`.
+   */
+  async fitTemperatures(examples: readonly CalibrationExample[], opts: CalibrationOptions = {}): Promise<CalibrationResult> {
+    const ao = { ...this.answerOptions(opts), optionOrders: 1 };
+    const records = [];
+    for (const ex of examples) {
+      const { qids, items } = encodeRequest(this.encode, this.ids, this.config, ex.state, ex.questions, ao);
+      const out = await runSequences(this.session, this.ids.pad, items);
+      records.push(...calibrationRecords(qids, items, out.logits, ex.labels));
+    }
+    return fitTemperatureMap(records, this.config, opts);
+  }
+
+  /** Replace the temperatures (each clamped to [0.5, 5]); a per-cardinality value wins over its type's. */
+  setTemperatures(t: Partial<Pick<PedConfig, "temperature" | "temperature_by_options">>): void {
+    Object.assign(
+      this.config,
+      clampedTemperatures({
+        temperature: t.temperature ?? this.config.temperature,
+        temperature_by_options: t.temperature_by_options ?? this.config.temperature_by_options,
+      }),
+    );
   }
 
   /** Release the ONNX session. The instance must not be used afterwards. */
