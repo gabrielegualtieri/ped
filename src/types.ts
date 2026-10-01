@@ -6,14 +6,14 @@ export interface ChoiceQuestion {
   type: "choice";
   instructions: string | object;
   /** option -> short description (or null), or a plain list of option names */
-  criteria: Record<string, string | null> | string[];
+  criteria: Record<string, string | null> | readonly string[];
 }
 
 export interface ScoreQuestion {
   type: "score";
   instructions: string | object;
   /** ordered levels, index 0 = lowest */
-  criteria: string[];
+  criteria: readonly string[];
 }
 
 export interface NoulQuestion {

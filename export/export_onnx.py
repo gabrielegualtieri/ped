@@ -1,6 +1,7 @@
-"""Export the decision model (convaiinnovations/laya: ModernBERT encoder + decision head) to a single ONNX file.
+"""Export the decision model (convaiinnovations/laya: encoder + decision head; English or multilingual checkpoint) to ONNX.
 
 Usage:  .venv/bin/python export_onnx.py [model_dir] [out_dir]
+        model_dir is a checkpoint (the repo root, or a variant subfolder such as model/multilingual)
 Inputs : input_ids [B,L] int64, attention_mask [B,L] int64, marker_pos [B,K] int64, marker_mask [B,K] bool, qtype [B] int64
 Outputs: logits [B,K] float32 (uncalibrated; masked slots = -1e4), act_probs [B,2] float32
 """
@@ -12,11 +13,14 @@ import sys
 import numpy as np
 import torch
 
-sys.path.insert(0, os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "model"))
-from rl_common import build_model  # noqa: E402
-
 model_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "model")
 out_dir = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else "../onnx")
+
+# rl_common.py sits at the repo root; a variant subfolder (multilingual/, typed-decisions/) shares it
+sys.path.insert(0, os.path.dirname(model_dir))
+sys.path.insert(0, model_dir)
+from rl_common import build_model  # noqa: E402
+
 os.makedirs(out_dir, exist_ok=True)
 
 from safetensors.torch import load_file  # noqa: E402
@@ -59,7 +63,7 @@ prog = torch.onnx.export(
     dynamic_shapes={"input_ids": {0: batch, 1: seq}, "attention_mask": {0: batch, 1: seq},
                     "marker_pos": {0: batch, 1: opts}, "marker_mask": {0: batch, 1: opts}, "qtype": {0: batch}},
 )
-prog.save(out, external_data=False)
+prog.save(out, external_data=True)  # ped.onnx (graph) + ped.onnx.data (weights), the two files BUNDLE_FILES expects
 
 # ship the tokenizer + calibration config next to the graph
 shutil.copytree(os.path.join(model_dir, "tokenizer"), os.path.join(out_dir, "tokenizer"), dirs_exist_ok=True)
