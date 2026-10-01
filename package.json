@@ -1,7 +1,7 @@
 {
   "name": "@heryox/ped",
   "version": "0.1.2",
-  "description": "Ped: run the open-source Jev-compatible System-1 decision model (convaiinnovations/laya) from Node.js / TypeScript via ONNX Runtime",
+  "description": "Ped: run the open-source Jev-compatible System-1 decision model (convaiinnovations/laya, English and 100+ languages) from Node.js / TypeScript via ONNX Runtime",
   "license": "MIT",
   "author": "heryox",
   "repository": {
@@ -20,6 +20,8 @@
     "onnx",
     "onnxruntime",
     "modernbert",
+    "mmbert",
+    "multilingual",
     "classification"
   ],
   "type": "module",
@@ -32,7 +34,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "licenses"
   ],
   "engines": {
     "node": ">=20"
@@ -44,10 +47,11 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit && tsc -p examples/tsconfig.json --noEmit",
-    "test": "tsx --test test/test_download.ts test/test_model.ts test/test_sequence.ts",
+    "test": "tsx --test test/test_download.ts test/test_lang.ts test/test_model.ts test/test_router.ts test/test_sequence.ts test/test_tokenizer.ts",
     "format": "prettier --write \"{src,test,examples}/**/*.ts\" \"*.{json,md}\"",
     "format:check": "prettier --check \"{src,test,examples}/**/*.ts\" \"*.{json,md}\"",
     "example": "tsx examples/basic.ts",
+    "example:router": "tsx examples/router.ts",
     "prepublishOnly": "tsc -p tsconfig.json"
   },
   "dependencies": {

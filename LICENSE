@@ -20,3 +20,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+src/lang.ts, src/lang-latin.ts, src/lang-data.ts and the routing decision in src/router.ts are
+ported from the `laya` Python package by Convai Innovations
+(https://huggingface.co/convaiinnovations/laya), licensed under the Apache License 2.0. Those
+portions remain under the Apache License 2.0; its text is in licenses/laya-LICENSE.

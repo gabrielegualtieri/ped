@@ -11,13 +11,16 @@ const QTYPE_NAMES: QuestionType[] = ["choice", "score", "noul"];
 export interface InternalQ {
   t: QuestionType;
   ins: string;
-  crit: Record<string, string | null> | string[] | { true?: string; false?: string } | undefined;
+  crit: Record<string, string | null> | readonly string[] | { true?: string; false?: string } | undefined;
 }
+
+// Array.isArray narrows a readonly array to any[]; this keeps the element type
+const isList = (x: unknown): x is readonly string[] => Array.isArray(x);
 
 /** RLAgent._to_internal */
 export function toInternal(q: Question): InternalQ {
   let crit: InternalQ["crit"] = q.criteria;
-  if (q.type === "choice" && Array.isArray(crit)) {
+  if (q.type === "choice" && isList(crit)) {
     crit = Object.fromEntries(crit.map((c) => [c, null]));
   }
   return { t: q.type, ins: typeof q.instructions === "string" ? q.instructions : JSON.stringify(q.instructions), crit };
@@ -29,7 +32,7 @@ export function renderOptions(q: InternalQ): string[] {
     return Object.entries(q.crit as Record<string, string | null>).map(([k, v]) => (v ? `${k}: ${v}` : k));
   }
   if (q.t === "score") {
-    return (q.crit as string[]).map((c, i) => `level ${i}: ${c}`);
+    return (q.crit as readonly string[]).map((c, i) => `level ${i}: ${c}`);
   }
   const c = (q.crit ?? {}) as { true?: string; false?: string };
   return ["false: " + (c.false || "no, the statement does not hold"), "true: " + (c.true || "yes, the statement holds")];
