@@ -17,7 +17,7 @@ tags:
 # PED
 
 <p align="center">
-  <img src="https://huggingface.co/heryox/ped-onnx/resolve/main/assets/ped-logo.png" alt="PED — multilingual AI decision model" width="680" />
+  <img src="https://huggingface.co/heryox/ped-onnx/resolve/main/assets/ped-logo-orbitale.png" alt="PED — multilingual AI decision model" width="680" />
 </p>
 
 <p align="center"><strong>Typed decisions. Local inference. Multilingual by design.</strong></p>
@@ -152,6 +152,16 @@ reproduce this preprocessing and postprocessing; the graph takes tensors rather 
 - **Context:** long states are truncated after the header and options. Increase `maxLen` for the multilingual checkpoint when needed, up to its supported 8192-token context.
 - **Routing:** language detection is heuristic. Explicit `lang` or `model` is preferable when that information is available.
 - **Quality:** support for a language does not imply equal accuracy across languages or tasks. Check decisions and probability thresholds against representative data.
+
+## Brand assets
+
+<p>
+  <img src="https://huggingface.co/heryox/ped-onnx/resolve/main/assets/ped-icon-orbitale.png" alt="PED standalone orbital symbol" width="128" />
+</p>
+
+Download the [PED logo](https://huggingface.co/heryox/ped-onnx/resolve/main/assets/ped-logo-orbitale.png)
+or the [standalone symbol](https://huggingface.co/heryox/ped-onnx/resolve/main/assets/ped-icon-orbitale.png)
+(square PNG).
 
 ## Provenance and licenses
 
